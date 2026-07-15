@@ -71,7 +71,14 @@ tom_michelle_trim () {
 	/programs/fastp-0.23.4/fastp -i "$1" -I "$r2_filename" -o data/01_preprocessing/tom_trimmed_reads/${base1}"_trimmed.fastq.gz" -O data/01_preprocessing/tom_trimmed_reads/${base2}"_trimmed.fastq.gz" -h data/01_preprocessing/tom_fastp_reports/michelle/${base1}.html -j /dev/null --thread 24
 }
 export -f tom_michelle_trim
-parallel tom_michelle_trim ::: data/00_raw_input_reads/tom/michelle/*R1_001.fastq.gz
+parallel tom_michelle_trim ::: data/00_raw_reads/tom/michelle/*R1_001.fastq.gz
+
+tom_frank_trim () {
+  base1=$(basename "$1")
+  /programs/fastp-0.23.4/fastp -i "$1" -o data/01_preprocessing/tom_trimmed_reads/${base1}".fastq" -j /dev/null --thread 24
+}
+export -f tom_frank_trim
+parallel tom_frank_trim ::: data/00_raw_reads/tom/frank/*
 ```
 
 ```{bash salmon-strandedness-egg, eval = FALSE}
@@ -103,5 +110,3 @@ parallel tom_salmon ::: data/01_preprocessing/tom_trimmed_reads/*R1*
 ```
 
 # Michelle tomato dataset Automatically detected most likely library type as ISF
-
-# Dr. Frank tomato dataset 

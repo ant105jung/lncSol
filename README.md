@@ -14,3 +14,7 @@ Filtering ran with:
 - Transcoder 5.5.0
 - Infernal 1.1.3
 - Subread 2.1.1
+
+Citations: 
+O. Tange (2011): GNU Parallel - The Command-Line Power Tool,
+  ;login: The USENIX Magazine, February 2011:42-47.

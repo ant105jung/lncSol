@@ -1,12 +1,21 @@
 .Rproj.user
-.Rhistory
 .RData
+.Rhistory
+.gitignore
 .Ruserdata
 
 
 # Added by cargo
 
 /target
-/resources
-/data/00_raw_input_reads
-/data/01_preprocessing
+resources
+eggtom_lncRNA.Rproj
+genespace.RData
+WGCNA_wip.RData
+
+data/00_raw_reads
+data/01_preprocessing
+data/04_characterization
+data/03_filtering
+data/PanSol
+figures

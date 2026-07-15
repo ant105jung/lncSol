@@ -1,1 +1,0 @@
-/programs/TransDecoder-v5.5.0/util/compute_base_probs.pl ../../02_transcripts/egg_05classified/egg_antint.fasta 0 > /home/FrankLab/shared/aj564/eggtom_lncRNA/data/03_filtering/egg_02TransDecoder/egg_antint.fasta.transdecoder_dir/base_freqs.dat
