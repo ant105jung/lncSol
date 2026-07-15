@@ -1,5 +1,5 @@
 ---
-title: "Measuring expression and functional characterization"
+title: "Filtering for high confidence lncRNAs"
 author: "Antone Jung"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
@@ -24,109 +24,1074 @@ knitr::opts_chunk$set(echo = TRUE,
                       fig.align = "center")
 ```
 
-# Goals
+```{r violin-plots}
+install.packages("ggbreak")
+devtools::install_github("teunbrand/legendry")
+pacman::p_load(tidyverse, dplyr, ggplot2, RColorBrewer, Biostrings, patchwork, ggbreak, tispec, legendry, rtracklayer, install = FALSE)
 
-1. Generate expression 
+egg_transcriptome <- readDNAStringSet("resources/eggplant_transcriptome.fasta")
+egg_coding_transcriptome <- egg_transcriptome[grepl("g", names(egg_transcriptome), ignore.case = TRUE)]
 
-# Input
+egg_width <- as.data.frame(log10(width(egg_coding_transcriptome)))
+colnames(egg_width) <- "value"
+egg_width <- egg_width %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
 
-# Output
+egg_gc <- as.data.frame(letterFrequency(egg_coding_transcriptome, letters = "GC", as.prob = TRUE))
+colnames(egg_gc) <- "value"
+egg_gc <- egg_gc %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
 
-```{bash salmon-quantification}
-grep "^>" resources/galaxy_bari06.fa | cut -d " " -f 1 > data/04_characterization/egg_01quant/egg_decoys.txt
+egg_lncRNAtome <- readDNAStringSet("data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.fasta")
 
-sed -i.bak -e 's/>//g' data/04_characterization/egg_01quant/egg_decoys.txt
+egg_lncRNA_width <- as.data.frame(log10(width(egg_lncRNAtome)))
+colnames(egg_lncRNA_width) <- "value"
+egg_lncRNA_width <- egg_lncRNA_width %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
 
-/programs/gffread-0.9.12/gffread/gffread data/03_filtering/egg_06lncRNA/egg_lncRNA_genes.gtf -g resources/galaxy_bari06.fa -w data/03_filtering/egg_06lncRNA/egg_lncRNA_genes.fasta
+egg_lncRNA_gc <- as.data.frame(letterFrequency(egg_lncRNAtome, letters = "GC", as.prob = TRUE))
+colnames(egg_lncRNA_gc) <- "value"
+egg_lncRNA_gc <- egg_lncRNA_gc %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
 
-cat data/03_filtering/egg_06lncRNA/egg_lncRNA_genes.fasta resources/galaxy_bari06.fa > data/04_characterization/egg_01quant/egg_gentrome.fa
+egg_quant_lncRNA <- egg_quant %>% filter(grepl("MSTRG", rownames(.)))
+egg_lncRNA <- names(egg_lncRNAtome)
+egg_quant_lncRNA <- egg_quant_lncRNA %>% filter(rownames(.) %in% egg_lncRNA)
+egg_quant_mRNA <- egg_quant %>% filter(grepl("g", rownames(.)))
 
-/programs/salmon-1.10.0/bin/salmon index -t data/04_characterization/egg_01quant/egg_gentrome.fa -d data/04_characterization/egg_01quant/egg_decoys.txt -p 12 -i data/04_characterization/egg_01quant/egg_salmon_index
+egg_meta_tau <- data.frame(row.names = colnames(egg_quant)) %>% mutate(organ = 0) %>%
+  mutate(organ = ifelse(grepl("\\bF\\d", rownames(egg_meta)), 1, organ)) %>%
+  mutate(organ = ifelse(grepl("\\bMF\\d", rownames(egg_meta)), 2, organ)) %>%
+  mutate(organ = ifelse(grepl("\\bsb\\d", rownames(egg_meta)), 3, organ)) %>%
+  mutate(organ = ifelse(grepl("spine\\d", rownames(egg_meta)), 4, organ)) %>%
+  mutate(organ = ifelse(grepl("Firstleaf\\d", rownames(egg_meta)), 5, organ)) %>%
+  mutate(organ = ifelse(grepl("root\\d", rownames(egg_meta)), 6, organ)) %>%
+  mutate(organ = ifelse(grepl("stem\\d", rownames(egg_meta)), 7, organ)) %>%
+  mutate(organ = ifelse(grepl("shoot\\d", rownames(egg_meta)), 8, organ)) %>%
+  mutate(organ = ifelse(grepl("SeedlingRoot\\d", rownames(egg_meta)), 9, organ)) %>%
+  mutate(organ = ifelse(grepl("\\bUpSeedling|\\bseedling|\\bup", rownames(egg_meta)), 10, organ)) %>%
+  mutate(organ = ifelse(grepl("5cmFruit\\b", rownames(egg_meta)), 11, organ)) %>%
+  mutate(organ = ifelse(grepl("5cmFruitpeel", rownames(egg_meta)), 12, organ)) %>%
+  mutate(organ = ifelse(grepl("bigFruit", rownames(egg_meta)), 13, organ))
 
-for file in data/01_preprocessing/egg_trimmed_reads/*R1*; do base=$(basename $file _R1_trimmed.fastq.gz); r2_filename=${file/R1/R2}; /programs/salmon-1.10.0/bin/salmon quant -l A -i data/04_characterization/egg_01quant/egg_salmon_index \
--1 $file -2 $r2_filename \
---gcBias --posBias --seqBias \
--o data/04_characterization/egg_01quant/egg_salmon/${base}_quant; done
+egg_tau_lncRNA_preavg <- cbind(t(egg_quant_lncRNA), egg_meta_tau)
+egg_tau_lncRNA_preavg <- group_by(egg_tau_lncRNA_preavg, organ)
+egg_tau_lncRNA_avg <- egg_tau_lncRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
 
-grep -o "MSTRG.[0\-9]*.1\s" data/04_characterization/egg_01quant/egg_salmon/EE_1800_R_1_S106_quant/quant.sf | sed '1s/^/Name\n/' > data/04_characterization/egg_01quant/egg_quant_matrix.txt
+egg_lncRNA_tau <- calcTau(egg_tau_lncRNA_avg)
+egg_lncRNA_tau <- egg_lncRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
 
-for file in data/04_characterization/egg_01quant/egg_salmon/123*_quant/quant.sf; do base=$(echo "$file" | cut -d '_' -f 8); grep "MSTRG.[0\-9]*.1\s" $file | cut -d $'\t' -f 4 | sed "1s/^/${base}\n/" > temp.txt; paste data/04_characterization/egg_01quant/egg_quant_matrix.txt temp.txt > data/04_characterization/egg_01quant/egg_quant_temp_matrix.txt; cp data/04_characterization/egg_01quant/egg_quant_temp_matrix.txt data/04_characterization/egg_01quant/egg_quant_matrix.txt; rm temp.txt; done
+egg_tau_mRNA_preavg <- cbind(t(egg_quant_mRNA), egg_meta_tau)
+egg_tau_mRNA_preavg <- group_by(egg_tau_mRNA_preavg, organ)
+egg_tau_mRNA_avg <- egg_tau_mRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
 
-for file in data/04_characterization/egg_01quant/egg_salmon/EE*_quant/quant.sf; do base=$(echo "$file" | cut -d '_' -f 6,7,8); grep "MSTRG.[0\-9]*.1\s" $file | cut -d $'\t' -f 4 | sed "1s/^/${base}\n/" > temp.txt; paste data/04_characterization/egg_01quant/egg_quant_matrix.txt temp.txt > data/04_characterization/egg_01quant/egg_quant_temp_matrix.txt; cp data/04_characterization/egg_01quant/egg_quant_temp_matrix.txt data/04_characterization/egg_01quant/egg_quant_matrix.txt; rm temp.txt; done
+egg_mRNA_tau <- calcTau(egg_tau_mRNA_avg)
+egg_mRNA_tau <- egg_mRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
 
-rm data/04_characterization/egg_01quant/egg_quant_temp_matrix.txt
+egg_total_width <- rbind(egg_lncRNA_width, egg_width)
 
-``` 
+egg_total_gc <- rbind(egg_lncRNA_gc, egg_gc)
 
-```{bash seekr-function}
-docker1 pull calabreselab/seekr:latest
+egg_total_tau <- rbind(egg_lncRNA_tau, egg_mRNA_tau)
 
-docker1 images
+GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin,
+  draw_group = function(self, data, ..., draw_quantiles = NULL) {
+    # Original function by Jan Gleixner (@jan-glx)
+    # Adjustments by Wouter van der Bijl (@Axeman)
+    data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
+    grp <- data[1, "group"]
+    newdata <- plyr::arrange(transform(data, x = if (grp %% 2 == 1) xminv else xmaxv), if (grp %% 2 == 1) y else -y)
+    newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
+    newdata[c(1, nrow(newdata) - 1, nrow(newdata)), "x"] <- round(newdata[1, "x"])
+    if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
+      stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <= 1))
+      quantiles <- create_quantile_segment_frame(data, draw_quantiles, split = TRUE, grp = grp)
+      aesthetics <- data[rep(1, nrow(quantiles)), setdiff(names(data), c("x", "y")), drop = FALSE]
+      aesthetics$alpha <- rep(1, nrow(quantiles))
+      both <- cbind(quantiles, aesthetics)
+      quantile_grob <- GeomPath$draw_panel(both, ...)
+      ggplot2:::ggname("geom_split_violin", grid::grobTree(GeomPolygon$draw_panel(newdata, ...), quantile_grob))
+    }
+    else {
+      ggplot2:::ggname("geom_split_violin", GeomPolygon$draw_panel(newdata, ...))
+    }
+  }
+)
 
-docker1 run -d -it calabreselab/seekr /bin/bash
-
-docker1 ps -a
-
-cp data/03_filtering/egg_06lncRNA/egg_lncRNA_genes.fasta /workdir/aj564
-cp resources/eggplant_transcriptome.fasta /workdir/aj564
-
-for i in {2..6}; do docker1 run -v /workdir/aj564:/dock calabreselab/seekr:latest seekr_norm_vectors /dock/eggplant_transcriptome.fasta -k $i -mv /dock/e${i}mean.npy -sv /dock/e${i}std.npy; done
-
-for i in {2..6}; do docker1 run -v /workdir/aj564:/dock calabreselab/seekr:latest seekr_kmer_counts /dock/egg_lncRNA_genes.fasta -k $i -mv /dock/e${i}mean.npy -sv /dock/e${i}.npy -o /dock/e${i}counts.csv; done
-
-for i in {2..6}; do docker1 run -v /workdir/aj564:/dock calabreselab/seekr:latest seekr_kmer_leiden /dock/egg_lncRNA_genes.fasta /dock/e${i}mean.npy /dock/e${i}std.npy $i -a RBERVertexPartition -r 1.0 -pco 0.1 -sd -ec threshold -et 0.2 -pn /dock/e${i}leiden -cf /dock/e${i}; done
-
-cp /workdir/aj564/e*std.npy data/04_characterization/egg_02function/
-cp /workdir/aj564/e*mean.npy data/04_characterization/egg_02function/
-cp /workdir/aj564/e*counts.csv data/04_characterization/egg_02function/
-cp /workdir/aj564/e*leiden* data/04_characterization/egg_02function/
-
-docker1 clean all
-```
-
-```{bash pca-with-clusters}
-library(dplyr)
-library(tidyverse)
-library(stats)
-library(data.table)
-
-install.packages('ggfortify')
-
-library(ggfortify)
-
-e4count <- read.csv("data/04_characterization/egg_02function/e4counts_genes.csv", header = FALSE)
-e4nodes <- read.csv("data/04_characterization/egg_02function/e4_nodes_leiden_genes.csv", header = FALSE)
-
-e4count_clean <- e4count %>% mutate(V1 = substring(V1, 2))
-
-e4count_rownames <- e4count_clean$V1
-
-rownames(e4count_clean) <- e4count_rownames
-
-e4count_clean <- select(e4count_clean, -V1)
-
-e4nodes_clean <- e4nodes[,c("V1","V3")]
-
-for (r in 1:nrow(e4nodes_clean)){
-  if (e4nodes_clean[r, "V3"] > 5){
-    e4nodes_clean[r, "V3"] = 6
+create_quantile_segment_frame <- function(data, draw_quantiles, split = FALSE, grp = NULL) {
+  dens <- cumsum(data$density) / sum(data$density)
+  ecdf <- stats::approxfun(dens, data$y)
+  ys <- ecdf(draw_quantiles)
+  violin.xminvs <- (stats::approxfun(data$y, data$xminv))(ys)
+  violin.xmaxvs <- (stats::approxfun(data$y, data$xmaxv))(ys)
+  violin.xs <- (stats::approxfun(data$y, data$x))(ys)
+  if (grp %% 2 == 0) {
+    data.frame(
+      x = vctrs::vec_interleave(violin.xs, violin.xmaxvs),
+      y = rep(ys, each = 2), group = rep(ys, each = 2)
+    )
+  } else {
+    data.frame(
+      x = vctrs::vec_interleave(violin.xminvs, violin.xs),
+      y = rep(ys, each = 2), group = rep(ys, each = 2)
+    )
   }
 }
 
-e4nodes_clean <- e4nodes_clean %>% rename ("group" = "V3")
+geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., 
+                              draw_quantiles = NULL, trim = TRUE, scale = "area", na.rm = FALSE, 
+                              show.legend = NA, inherit.aes = TRUE) {
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, position = position, 
+        show.legend = show.legend, inherit.aes = inherit.aes, 
+        params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
+}
 
-rownames(e4nodes_clean) <- e4nodes_clean$V1
 
-pca_result <- prcomp(e4count_clean, scale. = TRUE)
+#TOM
+tom_transcriptome <- readDNAStringSet("resources/tomato_transcriptome.fasta")
+tom_coding_transcriptome <- tom_transcriptome[grepl("g", names(tom_transcriptome), ignore.case = TRUE)]
 
-autoplot(pca_result, data = e4nodes_clean, colour = 'group')
+tom_width <- as.data.frame(log10(width(tom_coding_transcriptome)))
+colnames(tom_width) <- "value"
+tom_width <- tom_width %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
 
-summary(pca_result)
+tom_gc <- as.data.frame(letterFrequency(tom_coding_transcriptome, letters = "GC", as.prob = TRUE))
+colnames(tom_gc) <- "value"
+tom_gc <- tom_gc %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
+
+tom_lncRNAtome <- readDNAStringSet("data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.fasta")
+
+tom_lncRNA_width <- as.data.frame(log10(width(tom_lncRNAtome)))
+colnames(tom_lncRNA_width) <- "value"
+tom_lncRNA_width <- tom_lncRNA_width %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
+
+tom_lncRNA_gc <- as.data.frame(letterFrequency(tom_lncRNAtome, letters = "GC", as.prob = TRUE))
+colnames(tom_lncRNA_gc) <- "value"
+tom_lncRNA_gc <- tom_lncRNA_gc %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
+
+tom_quant_lncRNA <- tom_quant %>% filter(grepl("MSTRG", rownames(.)))
+tom_lncRNA <- names(tom_lncRNAtome)
+tom_quant_lncRNA <- tom_quant_lncRNA %>% filter(rownames(.) %in% tom_lncRNA)
+tom_quant_mRNA <- tom_quant %>% filter(grepl("g", rownames(.)))
+
+tom_meta_tau <- data.frame(row.names = colnames(tom_quant)) %>% mutate(organ = 0) %>%
+  mutate(organ = ifelse(grepl("Seedling", rownames(tom_meta)), 1, organ)) %>%
+  mutate(organ = ifelse(grepl("Root", rownames(tom_meta)), 2, organ)) %>%
+  mutate(organ = ifelse(grepl("Shoot", rownames(tom_meta)), 3, organ)) %>%
+  mutate(organ = ifelse(grepl("SAM", rownames(tom_meta)), 4, organ)) %>%
+  mutate(organ = ifelse(grepl("AcroStem", rownames(tom_meta)), 5, organ)) %>%
+  mutate(organ = ifelse(grepl("BasiStem", rownames(tom_meta)), 6, organ)) %>%
+  mutate(organ = ifelse(grepl("Flower", rownames(tom_meta)), 7, organ)) %>%
+  mutate(organ = ifelse(grepl("Old", rownames(tom_meta)), 8, organ)) %>%
+  mutate(organ = ifelse(grepl("Young", rownames(tom_meta)), 9, organ))
+
+tom_tau_lncRNA_preavg <- cbind(t(tom_quant_lncRNA), tom_meta_tau)
+tom_tau_lncRNA_preavg <- group_by(tom_tau_lncRNA_preavg, organ)
+tom_tau_lncRNA_avg <- tom_tau_lncRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
+
+tom_lncRNA_tau <- calcTau(tom_tau_lncRNA_avg)
+tom_lncRNA_tau <- tom_lncRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
+
+tom_tau_mRNA_preavg <- cbind(t(tom_quant_mRNA), tom_meta_tau)
+tom_tau_mRNA_preavg <- group_by(tom_tau_mRNA_preavg, organ)
+tom_tau_mRNA_avg <- tom_tau_mRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
+
+tom_mRNA_tau <- calcTau(tom_tau_mRNA_avg)
+tom_mRNA_tau <- tom_mRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
+
+tom_total_width <- rbind(tom_lncRNA_width, tom_width)
+
+tom_total_gc <- rbind(tom_lncRNA_gc, tom_gc)
+
+tom_total_tau <- rbind(tom_lncRNA_tau, tom_mRNA_tau)
+  
+#GRAPHING
+total_width <- rbind(egg_total_width, tom_total_width)
+total_gc <- rbind(egg_total_gc, tom_total_gc)
+total_tau <- rbind(egg_total_tau, tom_total_tau)
+
+((ggplot(total_width,
+       aes(as.factor(species), value, fill = transcript)) +
+  geom_split_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
+    scale_fill_manual(values = c("#B398F4", "#F3C7F8", "#609C54", "#D3F9CD")) + theme(legend.position = "none", axis.text.x = element_blank(), plot.title = element_text(size = 10)) +
+    labs(x = NULL, y = expression(log[10](nt)), title = "Transcript Length") +
+    coord_cartesian(ylim = c(2, 4)) ) + 
+  
+  (ggplot(total_gc,
+       aes(as.factor(species), value, fill = transcript)) +
+  geom_split_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
+    scale_fill_manual(values = c("#B398F4", "#F3C7F8", "#609C54", "#D3F9CD")) + theme(legend.position = "none", axis.text.x = element_blank(), plot.title = element_text(size = 10)) +
+    labs(x = NULL, y = "GC percentaage (%)", title = "Nucleotide Composition") +
+    coord_cartesian(ylim = c(0.2, 0.6)) )) /  
+  
+  (ggplot(total_tau,
+       aes(as.factor(species), value, fill = transcript)) +
+  geom_split_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
+    scale_fill_manual(labels = c("", "", "lncRNA", "mRNA"), values = c("#B398F4", "#F3C7F8", "#609C54", "#D3F9CD")) + 
+    theme(legend.position = "bottom", plot.title = element_text(size = 10)) +     guides(fill = guide_legend(nrow = 2, ncol = 2, title = NULL)) +
+    labs(x = NULL, y = expression(tau~("TAU")~index), title = "Tissue Specificity")) +
+
+  plot_annotation(title = "LncRNA vs mRNA characteristics")
 
 ```
 
-```{r expression_heatmap}
-egg_quant <- read.table("data/04_characterization/egg_01quant/egg_quant_matrix.txt", header = TRUE, row.names = 1)
+```{r exp_heatmaps}
+install.packages("gt")
+pacman::p_load(tidyverse, patchwork, RColorBrewer, viridis, patchwork, gt, install = FALSE)
 
-heatmap(as.matrix(egg_quant))
+egg_lncRNA_long <- egg_quant_lncRNA %>% mutate(across(everything(), ~ log2(.x + 1))) %>% mutate(transcript = rownames(.)) %>% pivot_longer(., cols = !transcript, names_to = "sample", values_to = "expression")
+
+egg_lncRNA_long_meta <- egg_lncRNA_long %>% 
+  mutate(organ = 0) %>%
+  mutate(organ = ifelse(grepl("\\bF\\d", sample), 1, organ)) %>%
+  mutate(organ = ifelse(grepl("\\bMF\\d", sample), 2, organ)) %>%
+  mutate(organ = ifelse(grepl("\\bsb\\d", sample), 3, organ)) %>%
+  mutate(organ = ifelse(grepl("spine\\d", sample), 4, organ)) %>%
+  mutate(organ = ifelse(grepl("Firstleaf\\d", sample), 5, organ)) %>%
+  mutate(organ = ifelse(grepl("root\\d", sample), 6, organ)) %>%
+  mutate(organ = ifelse(grepl("stem\\d", sample), 7, organ)) %>%
+  mutate(organ = ifelse(grepl("shoot\\d", sample), 8, organ)) %>%
+  mutate(organ = ifelse(grepl("SeedlingRoot\\d", sample), 9, organ)) %>%
+  mutate(organ = ifelse(grepl("\\bUpSeedling|\\bseedling|\\bup", sample), 10, organ)) %>%
+  mutate(organ = ifelse(grepl("5cmFruit\\b", sample), 11, organ)) %>%
+  mutate(organ = ifelse(grepl("5cmFruitpeel", sample), 12, organ)) %>%
+  mutate(organ = ifelse(grepl("bigFruit", sample), 13, organ))
+
+egg_lncRNA_peaks <- egg_lncRNA_long_meta %>% 
+  group_by(transcript) %>% 
+  slice_max(order_by = expression, n = 1, with_ties = F) %>% 
+  rename(peaked_at_organ = organ) %>% 
+  rename(peaked_at_sample = sample)
+
+egg_lncRNA_num_peaks_organ <- egg_lncRNA_peaks %>% 
+  group_by(peaked_at_organ) %>% 
+  count() %>% 
+  arrange(-n) %>%
+  rename(n_organ = n)
+
+egg_lncRNA_num_peaks_sample <- egg_lncRNA_peaks %>% 
+  group_by(peaked_at_sample) %>% 
+  count() %>% 
+  arrange(-n) %>%
+  rename(n_sample = n)
+
+egg_lncRNA_peaks_reordered <- egg_lncRNA_peaks %>% 
+  inner_join(egg_lncRNA_num_peaks_organ, by = "peaked_at_organ") %>% 
+  inner_join(egg_lncRNA_num_peaks_sample, by = "peaked_at_sample") %>%
+  arrange(-n_organ, -n_sample, expression)
+
+egg_lncRNA_samples_reordered <- egg_lncRNA_num_peaks_sample %>% 
+  mutate(peaked_at_organ = 0) %>%
+  mutate(peaked_at_organ = ifelse(grepl("\\bF\\d", peaked_at_sample), 1, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("\\bMF\\d", peaked_at_sample), 2, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("\\bsb\\d", peaked_at_sample), 3, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("spine\\d", peaked_at_sample), 4, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Firstleaf\\d", peaked_at_sample), 5, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("root\\d", peaked_at_sample), 6, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("stem\\d", peaked_at_sample), 7, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("shoot\\d", peaked_at_sample), 8, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("SeedlingRoot\\d", peaked_at_sample), 9, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("\\bUpSeedling|\\bseedling|\\bup", peaked_at_sample), 10, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("5cmFruit\\b", peaked_at_sample), 11, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("5cmFruitpeel", peaked_at_sample), 12, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("bigFruit", peaked_at_sample), 13, peaked_at_organ)) %>%
+  inner_join(egg_lncRNA_num_peaks_organ, by = "peaked_at_organ") %>% 
+  arrange(-n_organ, -n_sample)
+  
+egg_lncRNA_long_meta$sample <- factor(egg_lncRNA_long_meta$sample, levels = egg_lncRNA_samples_reordered$peaked_at_sample)
+egg_lncRNA_long_meta$transcript <- factor(egg_lncRNA_long_meta$transcript, levels = egg_lncRNA_peaks_reordered$transcript)
+
+egg_x_label <- c("", "", "", "1", "", "", "", "", "", "", "2", "", "", "", "", "3", "", "", "4", "", "", "5", "", "", "6", "", "", "", "7", "", "", "8", "", "", "9", "", "", "10", "", "11", "", "", "12", "", "13")
+
+egg_x_key <- data.frame(Number = c("1", "2", "3", "4", "5","6","7","8","9","10","11","12","13"), Tissue = c("SeedlingShoot", "Prickle", "SeedlingRoot", "OpenFlower","BigFruit", "MediumFlowerBud", "SmallFlowerBud", "MatureRoot", "MatureStem", "SmallFruitPeel", "FirstTrueLeaf", "MatureShoot", "SmallFruit"))
+
+egg_reordered_heatmap <- egg_lncRNA_long_meta %>% 
+  ggplot(aes(x = sample, y = transcript)) +
+  geom_tile(aes(fill = expression)) +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
+  theme(axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank(), legend.position = "right",
+    legend.justification = "top",
+    axis.ticks.x.bottom = element_blank()) +
+  scale_x_discrete(labels = egg_x_label) +
+  labs(title = "Eggplant LncRNA Expression", y = "LncRNA Transcripts", x = "Tissue Type", fill = expression(paste(log[2], "TPM")))
+
+egg_reordered_heatmap + gt::gt(egg_x_key)
+
+#TOM
+tom_lncRNA_long <- tom_quant_lncRNA %>% mutate(across(everything(), ~ log2(.x + 1))) %>% mutate(transcript = rownames(.)) %>% pivot_longer(., cols = !transcript, names_to = "sample", values_to = "expression")
+
+tom_lncRNA_long_meta <- tom_lncRNA_long %>% mutate(organ = 0) %>%
+  mutate(organ = ifelse(grepl("Seedling", sample), 1, organ)) %>%
+  mutate(organ = ifelse(grepl("Root", sample), 2, organ)) %>%
+  mutate(organ = ifelse(grepl("Shoot", sample), 3, organ)) %>%
+  mutate(organ = ifelse(grepl("SAM", sample), 4, organ)) %>%
+  mutate(organ = ifelse(grepl("AcroStem", sample), 5, organ)) %>%
+  mutate(organ = ifelse(grepl("BasiStem", sample), 6, organ)) %>%
+  mutate(organ = ifelse(grepl("Flower", sample), 7, organ)) %>%
+  mutate(organ = ifelse(grepl("Old", sample), 8, organ)) %>%
+  mutate(organ = ifelse(grepl("Young", sample), 9, organ))
+
+tom_lncRNA_peaks <- tom_lncRNA_long_meta %>% 
+  group_by(transcript) %>% 
+  slice_max(order_by = expression, n = 1, with_ties = F) %>% 
+  rename(peaked_at_organ = organ) %>% 
+  rename(peaked_at_sample = sample)
+
+tom_lncRNA_num_peaks_organ <- tom_lncRNA_peaks %>% 
+  group_by(peaked_at_organ) %>% 
+  count() %>% 
+  arrange(-n) %>%
+  rename(n_organ = n)
+
+tom_lncRNA_num_peaks_sample <- tom_lncRNA_peaks %>% 
+  group_by(peaked_at_sample) %>% 
+  count() %>% 
+  arrange(-n) %>%
+  rename(n_sample = n)
+
+tom_lncRNA_peaks_reordered <- tom_lncRNA_peaks %>% 
+  inner_join(tom_lncRNA_num_peaks_organ, by = "peaked_at_organ") %>% 
+  inner_join(tom_lncRNA_num_peaks_sample, by = "peaked_at_sample") %>%
+  arrange(-n_organ, -n_sample, expression)
+
+tom_lncRNA_samples_reordered <- tom_lncRNA_num_peaks_sample %>% 
+  mutate(peaked_at_organ = 0) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Seedling", peaked_at_sample), 1, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Root", peaked_at_sample), 2, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Shoot", peaked_at_sample), 3, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("SAM", peaked_at_sample), 4, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("AcroStem", peaked_at_sample), 5, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("BasiStem", peaked_at_sample), 6, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Flower", peaked_at_sample), 7, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Old", peaked_at_sample), 8, peaked_at_organ)) %>%
+  mutate(peaked_at_organ = ifelse(grepl("Young", peaked_at_sample), 9, peaked_at_organ)) %>%
+  inner_join(tom_lncRNA_num_peaks_organ, by = "peaked_at_organ") %>% 
+  arrange(-n_organ, -n_sample)
+  
+tom_lncRNA_long_meta$sample <- factor(tom_lncRNA_long_meta$sample, levels = tom_lncRNA_samples_reordered$peaked_at_sample)
+tom_lncRNA_long_meta$transcript <- factor(tom_lncRNA_long_meta$transcript, levels = tom_lncRNA_peaks_reordered$transcript)
+
+tom_x_label <- c("", "", "1", "", "", "", "2", "", "", "", "3", "", "", "", "", "4", "", "", "", "", "5", "", "", "", "6", "", "", "", "", "7", "", "", "", "", "8", "", "", "", "", "9", "", "")
+
+tom_x_key <- data.frame(Number = c("1", "2", "3", "4", "5","6","7","8","9"), Tissue = c("Flower", "SAM", "Root", "OldLeaves","BasiStem", "Seedling", "Shoot", "YoungLeaves", "AcroStem"))
+
+tom_reordered_heatmap <- tom_lncRNA_long_meta %>% 
+  ggplot(aes(x = sample, y = transcript)) +
+  geom_tile(aes(fill = expression)) +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
+  theme(axis.text.y.left = element_blank(),
+        axis.ticks.y.left = element_blank(), legend.position = "right",
+    legend.justification = "top",
+    axis.ticks.x.bottom = element_blank()) +
+  scale_x_discrete(labels = tom_x_label) +
+  labs(title = "Tomato LncRNA Expression", y = "LncRNA Transcripts", x = "Tissue Type", fill = expression(paste(log[2], "TPM")))
+
+tom_reordered_heatmap + gt::gt(tom_x_key)
+```
+
+```{r WGCNA}
+pacman::p_load(WGCNA, tidyverse, CorLevelPlot, gridExtra, dplyr, RColorBrewer, install = FALSE)
+
+allowWGCNAThreads()
+
+# Egg ----
+# 1. Fetch Data ------------------------------------------------
+egg_quant <-  read.csv("data/03_filtering/egg_04quant/egg_quant_matrix.txt", sep = "\t", row.names = 1)
+egg_quant <- egg_quant[,1:45]
+
+# 2. QC - outlier detection ------------------------------------------------
+
+egg_gsg <- goodSamplesGenes(t(egg_quant))
+table(egg_gsg$goodGenes)
+table(egg_gsg$goodSamples)
+
+# remove genes that are detectd as outliers
+egg_quant <- egg_quant[egg_gsg$goodGenes == TRUE,]
+
+# pca - method 2
+
+egg_pca <- prcomp(t(egg_quant))
+egg_pca.dat <- egg_pca$x
+
+egg_pca.var <- egg_pca$sdev^2
+egg_pca.var.percent <- round(egg_pca.var/sum(egg_pca.var)*100, digits = 2)
+
+egg_pca.dat <- as.data.frame(egg_pca.dat)
+
+ggplot(egg_pca.dat, aes(PC1, PC2)) +
+  geom_point() +
+  geom_text(label = rownames(egg_pca.dat))
+  labs(x = paste0('PC1: ', egg_pca.var.percent[1], ' %'),
+       y = paste0('PC2: ', egg_pca.var.percent[2], ' %'))
+
+# 3. Log transform ----
+egg_quant <- log(egg_quant + 1)
+
+# 4. Network Construction  ---------------------------------------------------
+# Choose a set of soft-thresholding powers
+power <- c(c(1:10), seq(from = 12, to = 50, by = 2))
+
+# Call the network topology analysis function
+egg_sft <- pickSoftThreshold(t(egg_quant),
+                  powerVector = power,
+                  networkType = "signed",
+                  verbose = 5)
+
+
+egg_sft.data <- egg_sft$fitIndices
+egg_soft_power <- 5
+cor <- WGCNA::cor
+egg_bwnet <- blockwiseModules(t(egg_quant),
+                 maxBlockSize = 40000,
+                 TOMType = "unsigned",
+                 power = egg_soft_power,
+                 randomSeed = 10202005,
+                 minModuleSize = 50, 
+                 reassignThreshold = 0, 
+                 mergeCutHeight = 0.2, 
+                 deepSplit = 2)
+
+# 5. Module Eigengenes ---------------------------------------------------------
+egg_module_eigengenes <- egg_bwnet$MEs
+
+
+# Print out a preview
+head(egg_module_eigengenes)
+
+
+# get number of genes for each module
+table(egg_bwnet$colors)
+
+# Adjust merge for appropriate amount of MEs
+egg_merged = mergeCloseModules(t(egg_quant), egg_bwnet$colors, egg_module_eigengenes, cutHeight = 0.2)
+
+egg_module_eigengenes <- egg_merged$newMEs
+
+plotDendroAndColors(egg_bwnet$dendrograms[[1]], cbind(egg_bwnet$unmergedColors[egg_bwnet$blockGenes[[1]]], egg_bwnet$colors[egg_bwnet$blockGenes[[1]]]),
+                    c("unmerged", "merged"),
+                    dendroLabels = FALSE,
+                    addGuide = TRUE,
+                    hang= 0.03,
+                    guideHang = 0.05)
+
+# 6A. Relate modules to tissues --------------------------------------------------
+
+egg_meta <- data.frame(row.names = colnames(egg_quant)) %>%
+  mutate(OpenFlower = ifelse(grepl("\\bF\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(MediumFlowerBud = ifelse(grepl("\\bMF\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(SmallFlowerBud = ifelse(grepl("\\bsb\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(Prickle = ifelse(grepl("spine\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(FirstLeaf = ifelse(grepl("Firstleaf\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(MatureRoot = ifelse(grepl("root\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(MatureStem = ifelse(grepl("stem\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(MatureShoot = ifelse(grepl("shoot\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(SeedlingRoot = ifelse(grepl("SeedlingRoot\\d", rownames(egg_meta)), 1, 0)) %>%
+  mutate(SeedlingShoot = ifelse(grepl("\\bUpSeedling|\\bseedling|\\bup", rownames(egg_meta)), 1, 0)) %>%
+  mutate(SmallFruit = ifelse(grepl("5cmFruit\\b", rownames(egg_meta)), 1, 0)) %>%
+  mutate(SmallFruitPeel = ifelse(grepl("5cmFruitpeel", rownames(egg_meta)), 1, 0)) %>%
+  mutate(BigFruit = ifelse(grepl("bigFruit", rownames(egg_meta)), 1, 0))
+
+
+# Define numbers of genes and samples
+egg_nSamples <- ncol(egg_quant)
+egg_nGenes <- nrow(egg_quant)
+
+# visualize module-trait association as a heatmap
+
+egg_wgcna_heatmap <- merge(egg_module_eigengenes, egg_meta, by = 'row.names')
+
+head(egg_wgcna_heatmap)
+
+egg_wgcna_heatmap <- egg_wgcna_heatmap %>% 
+  column_to_rownames(var = 'Row.names')
+
+egg_corvals <- as.data.frame(stats::cor((egg_wgcna_heatmap)[69:81], (egg_wgcna_heatmap)[1:68])) %>% rownames_to_column("col") %>% pivot_longer(2:69, names_to = "row", values_to = "value")
+
+egg_peak_values <- egg_corvals %>%
+  group_by(row) %>% 
+  slice_max(order_by = value, n = 1, with_ties = F) %>%
+  dplyr::rename(peaked_at = col)
+
+egg_number_of_peaks <- egg_peak_values %>% 
+  group_by(peaked_at) %>% 
+  count() %>% 
+  arrange(n)
+
+egg_peak_values_reordered <- egg_peak_values %>% 
+  inner_join(egg_number_of_peaks, by = "peaked_at") %>% 
+  arrange(n, peaked_at, value)
+
+egg_corvals$col <- factor(egg_corvals$col, levels = unique(egg_peak_values_reordered$peaked_at))
+egg_corvals$row <- factor(egg_corvals$row, levels = unique(egg_peak_values_reordered$row))
+
+egg_y_labs <- egg_peak_values_reordered %>% mutate(row = ifelse(value > 0.75, row, "")) %>% arrange(n, value) %>% .$row
+
+egg_reordered_heatmap <- egg_corvals %>% 
+  ggplot(aes(x = col, y = row)) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_gradientn(limits = c(-1,1), colors = brewer.pal(9, "PuOr")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), axis.text.y = element_text(size = 5)) +
+  labs(y = "Gene Module", x = "Tissue", title = "Eggplant WGCNA-Tissue Correlation", fill = "Pearson") +
+  guides(fill = guide_colorbar(barheight = unit(14, "cm"), display = "gradient")) + scale_y_discrete(labels = egg_y_labs)
+
+egg_reordered_heatmap
+
+
+# 6B. Gene membership ---------------
+
+egg_membership_cor <- cor(egg_module_eigengenes, t(egg_quant), use = 'p')
+egg_membership_pvals <- corPvalueStudent(egg_membership_cor, egg_nSamples)
+egg_connectivity <- signedKME(t(egg_quant), egg_module_eigengenes)
+
+egg_black_lncRNA <- grep("MSTRG", names(which(egg_bwnet$colors == "black")), value = TRUE)
+egg_cyan_lncRNA <- grep("MSTRG", names(which(egg_bwnet$colors == "cyan")), value = TRUE)
+
+writeLines(append(egg_black_lncRNA, egg_cyan_lncRNA), "data/04_characterization/egg_01GO/prickle_lncRNAs.txt")
+
+egg_midnightblue_lncRNA <- grep("MSTRG", names(which(egg_bwnet$colors == "midnightblue")), value = TRUE)
+
+
+
+# Tomato ----
+# 1. Fetch Data ------------------------------------------------
+tom_quant <-  read.csv("data/03_filtering/tom_04quant/tom_quant_matrix.txt", sep = "\t", row.names = 1)
+tom_quant <- tom_quant[,1:42]
+
+# 2. QC - outlier detection ------------------------------------------------
+
+tom_gsg <- goodSamplesGenes(t(tom_quant))
+table(tom_gsg$goodGenes)
+table(tom_gsg$goodSamples)
+
+# remove genes that are detectd as outliers
+tom_quant <- tom_quant[tom_gsg$goodGenes == TRUE,]
+
+# pca - method 2
+
+tom_pca <- prcomp(t(tom_quant))
+tom_pca.dat <- tom_pca$x
+
+tom_pca.var <- tom_pca$sdev^2
+tom_pca.var.percent <- round(tom_pca.var/sum(tom_pca.var)*100, digits = 2)
+
+tom_pca.dat <- as.data.frame(tom_pca.dat)
+
+ggplot(tom_pca.dat, aes(PC1, PC2)) +
+  geom_point() +
+  geom_text(label = rownames(tom_pca.dat)) +
+  labs(x = paste0('PC1: ', tom_pca.var.percent[1], ' %'),
+       y = paste0('PC2: ', tom_pca.var.percent[2], ' %'))
+
+# 3. Log transform ----
+tom_quant <- log(tom_quant + 1)
+
+# 4. Network Construction  ---------------------------------------------------
+# Choose a set of soft-thresholding powers
+power <- c(c(1:10), seq(from = 12, to = 50, by = 2))
+
+# Call the network topology analysis function
+tom_sft <- pickSoftThreshold(t(tom_quant),
+                  powerVector = power,
+                  networkType = "signed",
+                  verbose = 5)
+
+
+tom_sft.data <- tom_sft$fitIndices
+tom_soft_power <- 18
+cor <- WGCNA::cor
+tom_bwnet <- blockwiseModules(t(tom_quant),
+                 maxBlockSize = 40000,
+                 TOMType = "unsigned",
+                 power = tom_soft_power,
+                 randomSeed = 10202005,
+                 minModuleSize = 50, 
+                 reassignThreshold = 0, 
+                 mergeCutHeight = 0.2, 
+                 deepSplit = 2)
+
+# 5. Module Eigengenes ---------------------------------------------------------
+tom_module_eigengenes <- tom_bwnet$MEs
+
+
+# Print out a preview
+head(tom_module_eigengenes)
+
+
+# get number of genes for each module
+table(tom_bwnet$colors)
+
+# Plot the dendrogram and the module colors before and after merging underneath
+plotDendroAndColors(tom_bwnet$dendrograms[[1]], cbind(tom_bwnet$unmergedColors[tom_bwnet$blockGenes[[1]]], tom_bwnet$colors[tom_bwnet$blockGenes[[1]]]),
+                    c("unmerged", "merged"),
+                    dendroLabels = FALSE,
+                    addGuide = TRUE,
+                    hang= 0.03,
+                    guideHang = 0.05)
+
+# 6A. Relate modules to tissues --------------------------------------------------
+tom_meta <- data.frame(row.names = colnames(tom_quant))
+tom_meta <- tom_meta %>%
+  mutate(Seedling = ifelse(grepl("Seedling", rownames(tom_meta)), 1, 0)) %>%
+  mutate(Root = ifelse(grepl("Root", rownames(tom_meta)), 1, 0)) %>%
+  mutate(Shoot = ifelse(grepl("Shoot", rownames(tom_meta)), 1, 0)) %>%
+  mutate(SAM = ifelse(grepl("SAM", rownames(tom_meta)), 1, 0)) %>%
+  mutate(AcroStem = ifelse(grepl("AcroStem", rownames(tom_meta)), 1, 0)) %>%
+  mutate(BasiStem = ifelse(grepl("BasiStem", rownames(tom_meta)), 1, 0)) %>%
+  mutate(Flower = ifelse(grepl("Flower", rownames(tom_meta)), 1, 0)) %>%
+  mutate(OldLeaves = ifelse(grepl("Old", rownames(tom_meta)), 1, 0)) %>%
+  mutate(YoungLeaves = ifelse(grepl("Young", rownames(tom_meta)), 1, 0))
+
+
+# Define numbers of genes and samples
+tom_nSamples <- ncol(tom_quant)
+tom_nGenes <- nrow(tom_quant)
+
+# visualize module-trait association as a heatmap
+
+tom_wgcna_heatmap <- merge(tom_module_eigengenes, tom_meta, by = 'row.names')
+
+head(tom_wgcna_heatmap)
+
+tom_wgcna_heatmap <- tom_wgcna_heatmap %>% 
+  column_to_rownames(var = 'Row.names')
+
+tom_corvals <- as.data.frame(stats::cor((tom_wgcna_heatmap)[47:55], (tom_wgcna_heatmap)[1:46])) %>% rownames_to_column("col") %>% pivot_longer(2:47, names_to = "row", values_to = "value")
+
+tom_peak_values <- tom_corvals %>%
+  group_by(row) %>% 
+  slice_max(order_by = value, n = 1, with_ties = F) %>%
+  dplyr::rename(peaked_at = col)
+
+tom_number_of_peaks <- tom_peak_values %>% 
+  group_by(peaked_at) %>% 
+  count() %>% 
+  arrange(n)
+
+tom_peak_values_reordered <- tom_peak_values %>% 
+  inner_join(tom_number_of_peaks, by = "peaked_at") %>% 
+  arrange(n, peaked_at, value)
+
+tom_corvals$col <- factor(tom_corvals$col, levels = unique(tom_peak_values_reordered$peaked_at))
+tom_corvals$row <- factor(tom_corvals$row, levels = unique(tom_peak_values_reordered$row))
+
+tom_y_labs <- tom_peak_values_reordered %>% mutate(row = ifelse(value > 0.75, row, "")) %>% arrange(n, value) %>% .$row
+
+tom_reordered_heatmap <- tom_corvals %>% 
+  ggplot(aes(x = col, y = row)) +
+  geom_tile(aes(fill = value)) +
+  scale_fill_gradientn(limits = c(-1,1), colors = brewer.pal(9, "PiYG")) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), axis.text.y = element_text(size = 5)) +
+  labs(y = "Gene Module", x = "Tissue", title = "Tomato WGCNA-Tissue Correlation", fill = "Pearson") +
+  guides(fill = guide_colorbar(barheight = unit(14, "cm"), display = "gradient")) + scale_y_discrete(labels = tom_y_labs)
+
+tom_reordered_heatmap
+
+# 6B. Gene membership ---------------
+
+tom_membership_cor <- cor(tom_module_eigengenes, t(tom_quant), use = 'p')
+tom_membership_pvals <- corPvalueStudent(tom_membership_cor, tom_nSamples)
+tom_connectivity <- signedKME(t(tom_quant), tom_module_eigengenes)
+```
+
+```{bash eggnog_mapper_local}
+cd resources
+git clone https://github.com/eggnogdb/eggnog-mapper.git
+cd eggnog-mapper
+python download_eggnog_data.py
+
+python emapper.py -i ../tomato_transcriptome.fasta -m diamond --data_dir data --itype genome --genepred prodigal --dmnd_ignore_warnings --dbmem --translate --go_evidence non-electronic --pfam_realign none --report_orthologs --decorate_gff yes --evalue 0.001 --score 60 --pident 40 --query_cover 20 --subject_cover 20 --tax_scope auto --target_orthologs all -o ../ttotal_eggnog
+
+conda create -n eggnog -c bioconda -c conda-forge eggnog-mapper
+conda activate eggnog
+emapper.py --data_dir data -m diamond --cpu 24 -i ../tomato_transcriptome.fasta -o ../ttotal_eggnog --evalue 0.001 --score 60 --pident 40 --query_cover 20 --subject_cover 20 --itype CDS --translate --tax_scope auto --target_orthologs all --go_evidence non-electronic --pfam_realign none --report_orthologs --decorate_gff yes --excel --dmnd_ignore_warnings --dmnd_algo ctg --resume --mp_start_method forkserver --temp_dir ../ttotal_eggnog > ../ttotal_eggnog/emapper.out 2> ../ttotal_eggnog/emapper.err
+```
+
+```{r GO}
+set.seed(10202005)
+#if (!requireNamespace("BiocManager", quietly = TRUE)) 
+#         install.packages("BiocManager")
+#install.packages("data.table")
+#BiocManager::install("Rgraphviz")
+#BiocManager::install("topGO", force = TRUE)
+#install.packages("ggnewscale")
+#install.packages("ggtext")
+
+pacman::p_load("dplyr", "tidyverse", "tidyr", "readr", "stringr", "data.table", "topGO", "ggnewscale", "ggtext", install = FALSE)
+
+# read the total transcriptome (universe)
+etotal <- fread("resources/etotal_annotations.tsv", sep = "\t")
+head(etotal)
+
+egg_go <- as.data.frame(etotal[,c(1,10)])
+egg_geneID2GO <- egg_go %>%
+  mutate(GO_list = strsplit(GOs, "[,|]")) %>%
+  dplyr::select(`#query`, GO_list) %>%
+  deframe()
+
+# Make a named factor (1 = DEG, 0 = background)
+egg_all_genes <- etotal$`#query`
+str(egg_all_genes)
+
+
+for (color in levels(as.factor(egg_bwnet$colors))){
+  geneList <- factor(as.integer(egg_all_genes %in% names(which(egg_bwnet$colors == color))))
+  names(geneList) <- egg_all_genes
+  
+  for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/egg_01GO/", color, "_", annot_type, ".csv"), row.names = FALSE)
+}
+}
+
+# egg black
+
+geneList <- factor(as.integer(egg_all_genes %in% names(which(egg_bwnet$colors == "black"))))
+names(geneList) <- egg_all_genes
+egg_black_GOdata <- new("topGOdata",
+              ontology = "BP",
+              allGenes = geneList,
+              geneSelectionFun = fun(x)(x==1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+egg_black_resultFisher <- runTest(egg_black_GOdata, algorithm = "classic", statistic = "fisher")
+
+egg_black_goResults <- GenTable(egg_black_GOdata,
+                      classicFisher = resultFisher,
+                      orderBy = "classicFisher",
+                      topNodes = 10)
+
+egg_black_goResults <- egg_black_goResults %>% mutate(GeneRatio = Annotated / length(geneList)) %>% arrange(GeneRatio) %>% arrange(GeneRatio) %>% mutate(classicFisher = log10(as.numeric(classicFisher)))
+
+egg_black_goResults$Term <- factor(egg_black_goResults$Term, levels = unique(egg_black_goResults$Term))
+
+black_bp <- egg_black_goResults %>% 
+  ggplot(aes(x = GeneRatio, y = Term, size = Annotated, color = classicFisher)) +
+  scale_color_gradientn(colors = rev(brewer.pal(9, "BuPu"))[1:6]) + geom_point() +
+  labs(title = "Eggplant MEBlack GO", x = "Gene Ratio", y = "GO Term", size = "Count", color = "p-value")
+
+black_bp
+
+# read the total transcriptome (universe)
+ttotal <- fread("resources/ttotal_annotations.csv", sep = ",")
+head(ttotal)
+
+tom_go <- as.data.frame(ttotal[,c(1,10)])
+tom_geneID2GO <- tom_go %>%
+  mutate(GO_list = strsplit(GOs, "[,|]")) %>%
+  dplyr::select(`query`, GO_list) %>%
+  deframe()
+
+# Make a named factor (1 = DEG, 0 = background)
+tom_all_genes <- ttotal$`query`
+str(tom_all_genes)
+
+
+for (color in levels(as.factor(tom_bwnet$colors))){
+  geneList <- factor(as.integer(tom_all_genes %in% names(which(tom_bwnet$colors == color))))
+  names(geneList) <- tom_all_genes
+  
+  for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = tom_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      orderBy = "classicFisher",
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/tom_01GO/", color, "_", annot_type, ".csv"), row.names = FALSE)
+}
+}
+
+#tom green
+geneList <- factor(as.integer(tom_all_genes %in% names(which(tom_bwnet$colors == "green"))))
+names(geneList) <- tom_all_genes
+tom_green_GOdata <- new("topGOdata",
+              ontology = "BP",
+              allGenes = geneList,
+              geneSelectionFun = fun(x)(x==1),
+              annot = annFUN.gene2GO,
+              gene2GO = tom_geneID2GO)
+tom_green_resultFisher <- runTest(tom_green_GOdata, algorithm = "classic", statistic = "fisher")
+
+tom_green_goResults <- GenTable(tom_green_GOdata,
+                      classicFisher = resultFisher,
+                      orderBy = "classicFisher",
+                      topNodes = 10)
+
+tom_green_goResults <- tom_green_goResults %>% mutate(GeneRatio = Annotated / length(geneList)) %>% arrange(GeneRatio) %>% arrange(GeneRatio) %>% mutate(classicFisher = log10(as.numeric(classicFisher)))
+
+tom_green_goResults$Term <- factor(tom_green_goResults$Term, levels = unique(tom_green_goResults$Term))
+
+tom_green <- tom_green_goResults %>% 
+  ggplot(aes(x = GeneRatio, y = Term, size = Annotated, color = classicFisher)) +
+  scale_color_gradientn(colors = rev(brewer.pal(9, "BuPu"))[1:6]) + geom_point() +
+  labs(title = "Eggplant MEBlack GO", x = "Gene Ratio", y = "GO Term", size = "Count", color = "p-value")
+
+tom_green
+
+go_combined <-
+  ggplot(mapping = aes(x = GeneRatio, y = Term, size = Annotated)) + geom_point(data = egg_black_goResults, aes(color = classicFisher), alpha = 0.75) +
+  scale_color_gradientn(colors = rev(brewer.pal(9, "BuPu"))[1:6])  + labs(size = "Count", color = "Eggplant <br> log<sub>10</sub>p-value") +
+  theme(legend.title = element_markdown()) + new_scale_color() +
+ geom_point(data = tom_green_goResults, aes(color = classicFisher), alpha = 0.75) +  scale_color_gradientn(colors = rev(brewer.pal(9, "Greens"))[1:6]) +
+  labs(title = "Eggplant MEBlack & Tomato MEGreen", x = "Gene Ratio", y = "GO Term", size = "Count", color = "Tomato <br> log<sub>10</sub>p-value") +
+  theme(legend.title = element_markdown(), axis.text.y.left = element_text(size = 12))
+
+go_combined
+```
+
+```{bash psMimic}
+cd resources/psmimic
+./configure make make install
+cd test/psRobot_mim 
+psRobot_mim -s smRNA -t target
+cd ../../../data/04_characterization/egg_02psMimic
+psRobot_mim -s ../../../resources/egg_miRNA.fasta -t ../../03_filtering/egg_07lncRNA/egg_lncRNA_genes.fasta
+
+cd ../tom_02psMimic
+psRobot_mim -s ../../../resources/tom_miRNA.fasta -t ../../03_filtering/tom_07lncRNA/tom_lncRNA_genes.fasta
+
+```
+
+```{bash orthofinder}
+conda create -n orthofinder -c bioconda -c conda-forge orthofinder
+conda activate orthofinder
+orthofinder -f lncRNAs -M msa -A mafft -d
+```
+
+```{r ortholog-analysis}
+egg_bwnet$colors[c("MSTRG.13039.1", "MSTRG.25430.1", "MSTRG.25431.1", "MSTRG.14995.1", "MSTRG.25377.1", "MSTRG.37257.1")]
+tom_bwnet$colors[c("MSTRG.25850.1", "MSTRG.18334.1", "MSTRG.26470.1", "MSTRG.16802.1", "MSTRG.26436.1", "MSTRG.17898.1")]
+```
+
+```{bash genespace}
+export PATH=/programs/minimap2-2.30:$PATH
+
+cat data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.fasta resources/tomato_transcriptome.fasta > data/04_characterization/tom_04genespace/tom_cdslnc.fasta
+
+minimap2 -a -x asm5 -t 24 resources/galaxy_m82.fa data/04_characterization/tom_04genespace/tom_cdslnc.fasta > data/04_characterization/tom_04genespace/tom_cdslnc_align.sam
+
+cat data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.fasta resources/eggplant_transcriptome.fasta > data/04_characterization/egg_04genespace/egg_cdslnc.fasta
+
+minimap2 -a -x asm5 -t 24 resources/galaxy_bari06.fa data/04_characterization/egg_04genespace/egg_cdslnc.fasta > data/04_characterization/egg_04genespace/egg_cdslnc_align.sam
+
+export PATH=/programs/bedtools2-2.29.2/bin:$PATH
+
+samtools view -bS data/04_characterization/tom_04genespace/tom_cdslnc_align.sam > data/04_characterization/tom_04genespace/tom_cdslnc_align.bam
+
+samtools view -bS data/04_characterization/egg_04genespace/egg_cdslnc_align.sam > data/04_characterization/egg_04genespace/egg_cdslnc_align.bam
+
+bedtools bamtobed -i data/04_characterization/tom_04genespace/tom_cdslnc_align.bam > data/04_characterization/tom_04genespace/tom_cdslnc_align.bed
+
+bedtools bamtobed -i data/04_characterization/egg_04genespace/egg_cdslnc_align.bam > data/04_characterization/egg_04genespace/egg_cdslnc_align.bed
+
+cd /workdir/$USER
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+sh Miniconda3-latest-Linux-x86_64.sh
+
+/workdir/aj564/miniconda3
+
+source /programs/miniconda3/bin/activate orthofinder-2.5.4 
+cd /home/FrankLab/shared/aj564/eggtom_lncRNA
+
+cp data/04_characterization/tom_04genespace/tom_cdslnc_align.bed data/04_characterization/04genespace_wd/bed/tom.bed
+
+cp data/04_characterization/egg_04genespace/egg_cdslnc_align.bed data/04_characterization/04genespace_wd/bed/egg.bed
+
+awk 'BEGIN{FS=OFS="\t"} {print $1,$2,$3,$4"_"++c[$4],$5,$6}' data/04_characterization/04genespace_wd/bed/tom.bed | cut -f 1-4 > temp.txt
+cp temp.txt data/04_characterization/04genespace_wd/bed/tom.bed
+rm temp.txt
+
+awk 'BEGIN{FS=OFS="\t"} {print $1,$2,$3,$4"_"++c[$4],$5,$6}' data/04_characterization/04genespace_wd/bed/egg.bed | cut -f 1-4 > temp.txt
+cp temp.txt data/04_characterization/04genespace_wd/bed/egg.bed
+rm temp.txt
+
+bedtools getfasta -fi resources/galaxy_m82.fa -bed data/04_characterization/04genespace_wd/bed/tom.bed -fo data/04_characterization/04genespace_wd/peptide/tom.fa -nameOnly
+
+bedtools getfasta -fi resources/galaxy_bari06.fa -bed data/04_characterization/04genespace_wd/bed/egg.bed -fo data/04_characterization/04genespace_wd/peptide/egg.fa -nameOnly
+
+grep -Fvf <(cut -f4 data/04_characterization/04genespace_wd/bed/egg.bed) <(grep ">" data/04_characterization/04genespace_wd/peptide/egg.fa | tr -d ">" | awk '{print $1}')
+
+grep -Fvf <(cut -f4 data/04_characterization/04genespace_wd/bed/tom.bed) <(grep ">" data/04_characterization/04genespace_wd/peptide/tom.fa | tr -d ">" | awk '{print $1}')
+
+sed -i 's/:/_/g' data/04_characterization/04genespace_wd/peptide/tom.fa
+sed -i 's/:/_/g' data/04_characterization/04genespace_wd/bed/tom.bed
+sed -i 's/:/_/g' data/04_characterization/04genespace_wd/peptide/egg.fa
+sed -i 's/:/_/g' data/04_characterization/04genespace_wd/bed/egg.bed
+
+orthofinder -f /home/FrankLab/shared/aj564/eggtom_lncRNA/data/04_characterization/04genespace_wd//tmp -t 12 -a 1 -X -o /home/FrankLab/shared/aj564/eggtom_lncRNA/data/04_characterization/04genespace_wd//orthofinder -d
+
+
+
+## Using gtf instead of fasta
+# peptide should be the same
+# use parse annot
+
+
+cat data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.fasta data/04_characterization/05genespace_wd/rawRepo/tom/tom.fasta > data/04_characterization/05genespace_wd/rawRepo/tom/ttom.fasta
+
+cat data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.fasta data/04_characterization/05genespace_wd/rawRepo/egg/egg.fa > data/04_characterization/05genespace_wd/rawRepo/egg/tegg.fasta
+
+export PATH=/programs/genometools-1.5.9/bin:$PATH
+
+/programs/gffread-0.9.12/gffread/gffread data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf -o- > data/04_characterization/05genespace_wd/rawRepo/tom/lnctom.gff3
+
+/programs/gffread-0.9.12/gffread/gffread data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.gtf -o- > data/04_characterization/05genespace_wd/rawRepo/egg/lncegg.gff3
+
+cat data/04_characterization/05genespace_wd/rawRepo/tom/lnctom.gff3 data/04_characterization/05genespace_wd/rawRepo/tom/cdstom.gff3 > data/04_characterization/05genespace_wd/rawRepo/tom/tom.gff3
+
+cat data/04_characterization/05genespace_wd/rawRepo/egg/lncegg.gff3 data/04_characterization/05genespace_wd/rawRepo/egg/cdsegg.gff3 > data/04_characterization/05genespace_wd/rawRepo/egg/egg.gff3
+```
+
+```{r genespace}
+devtools::install_github("jtlovell/GENESPACE")
+BiocManager::install(c("Biostrings", "rtracklayer"))
+pacman::p_load(GENESPACE, Biostrings, rtracklayer, tidyverse, dplyr, ggplot2, cowplot)
+
+parse_annotations(
+  rawGenomeRepo = "/home/FrankLab/shared/aj564/eggtom_lncRNA/data/04_characterization/05genespace_wd/rawRepo/",
+  genomeDirs = c("tegg", "ttom"),
+  genomeIDs = c("tegg", "ttom"),
+  gffString = "gff3",
+  faString = "fa",
+  genespaceWd = "genespace_wd",
+  minPepLen = 0,
+  dropDuplicates = TRUE,
+  removeNonAAs = TRUE,
+  presets = "none",
+  gffIdColumn = "ID",
+  headerEntryIndex = 1,
+  headerSep = " ",
+  gffStripText = "ID=",
+  headerStripText = "",
+  convertSpecialCharacters = "_",
+  chrIdDictionary = NULL,
+  troubleShoot = TRUE,
+  overwrite = FALSE
+)
+
+path2mcscanx <- "/programs/MCScanX/"
+wd <- "/home/FrankLab/shared/aj564/eggtom_lncRNA/data/04_characterization/genespace_wd/"
+
+gpar <- init_genespace(
+  wd = wd, 
+  path2mcscanx = path2mcscanx, nCores = 24)
+
+out <- run_genespace(gsParam = gpar)
+e_genes <- query_pangenes(out, refGenome = "tegg")
+t_genes <- query_pangenes(out, refGenome = "ttom")
+
+lncgenes <- e_genes %>% filter(grepl("MSTRG", repGene)) %>% filter(grepl("MSTRG", tegg)) %>% filter(grepl("MSTRG", ttom))
+
+black_prickle_syn <- lncgenes %>% filter(genome == "tegg") %>% filter(repGene %in% egg_black_lncRNA)
+
+cyan_prickle_syn <- lncgenes %>% filter(genome == "tegg") %>% filter(repGene %in% egg_cyan_lncRNA)
+
+black_prickle_syn$ttom %>% unlist()
+
+cyan_prickle_syn$ttom %>% unlist()
+  
+black_tom_ortho <- data.frame(tom_bwnet$colors) %>% rownames_to_column("name") %>% filter(grepl("MSTRG.3642.1|MSTRG.2324.1|MSTRG.14560.1|MSTRG.14561.1|MSTRG.10412.1|MSTRG.26491.1|MSTRG.29730.1|MSTRG.29820.1|MSTRG.31553.1|MSTRG.31991.1|MSTRG.5270.1|MSTRG.6268.1|MSTRG.17513.1", name))
+
+cyan_tom_ortho <- data.frame(tom_bwnet$colors) %>% rownames_to_column("name") %>% filter(grepl("MSTRG.4335.1|MSTRG.5761.1|MSTRG.18933.1", name))
+
+black_prickle_to_plot <- 
+  data.frame(egg = unlist(append(black_prickle_syn$tegg, black_prickle_syn$tegg[[3]], after = 3))) %>%
+  mutate(tom = str_subset(str_extract(unlist(black_prickle_syn$ttom), "MSTRG\\.\\d*\\.1"), "MSTRG")) %>%
+  inner_join(., black_tom_ortho, by = c("tom" = "name")) %>%
+  rename(tom_color = tom_bwnet.colors) %>%
+  mutate(tom_color = paste0("ME", tom_color)) %>%
+  mutate(egg_color = "MEblack") %>%
+  rowwise() %>%
+  mutate(egg_cor = egg_membership_cor[egg_color, egg]) %>%
+  mutate(egg_p = egg_membership_pvals[egg_color, egg]) %>%
+  mutate(tom_cor = tom_membership_cor[tom_color, tom]) %>%
+  mutate(tom_p = tom_membership_pvals[tom_color, tom]) %>%
+  mutate(tom_color = substring(tom_color, 3))
+
+black_prickle_plot <-
+  ggplot(black_prickle_to_plot, aes(x = egg_cor,
+                                    y = tom_cor,
+                                    color = tom_color,
+                                    alpha = ifelse(egg_p < 5e-2 & tom_p < 5e-2, 1, 0.3))) +
+  geom_point(size = 4) +
+  scale_alpha_identity() +
+  scale_color_identity(guide = "legend") + 
+  geom_hline(yintercept = 0, color = "black") +
+  geom_vline(xintercept = 0, color = "black") +  
+  labs(
+    title = "Eggplant MEBlack & Tomato Orthologs",
+    x = "Eggplant MEBlack Membership",
+    y = "Tomato Ortholog Module Membership",
+    color = "Tomato Ortholog") + 
+  theme(legend.position = "none",
+    legend.title = element_text(face = "bold"))
+
+black_prickle_plot + annotate("rect", xmin = 0.45, xmax = 0.95, ymin = 0.7, ymax = 1.05, alpha = 0, color= "#609C54")
+
+cyan_prickle_to_plot <- 
+  data.frame(egg = str_subset(str_extract(unlist(cyan_prickle_syn$tegg), "MSTRG\\.\\d*\\.1"), "MSTRG")) %>%
+  mutate(tom = append(str_subset(str_extract(unlist(cyan_prickle_syn$ttom), "MSTRG\\.\\d*\\.1"), "MSTRG"), str_subset(str_extract(unlist(cyan_prickle_syn$ttom), "MSTRG\\.\\d*\\.1"), "MSTRG")[2], after = 2)) %>%
+  inner_join(., cyan_tom_ortho, by = c("tom" = "name")) %>%
+  rename(tom_color = tom_bwnet.colors) %>%
+  mutate(tom_color = paste0("ME", tom_color)) %>%
+  mutate(egg_color = "MEcyan") %>%
+  rowwise() %>%
+  mutate(egg_cor = egg_membership_cor[egg_color, egg]) %>%
+  mutate(egg_p = egg_membership_pvals[egg_color, egg]) %>%
+  mutate(tom_cor = tom_membership_cor[tom_color, tom]) %>%
+  mutate(tom_p = tom_membership_pvals[tom_color, tom]) %>%
+  mutate(tom_color = substring(tom_color, 3))
+
+cyan_prickle_plot <-
+  ggplot(cyan_prickle_to_plot, aes(x = egg_cor,
+                                    y = tom_cor,
+                                    color = tom_color,
+                                    alpha = ifelse(egg_p < 5e-2 & tom_p < 5e-2, 1, 0.3))) +
+  geom_point(size = 4) +
+  scale_alpha_identity() +
+  scale_color_identity(guide = "legend") + 
+  geom_hline(yintercept = 0, color = "black") +
+  geom_vline(xintercept = 0, color = "black") +  
+  labs(
+    title = "Eggplant MECyan lncRNAs + Tomato Orthologs",
+    x = "Eggplant MECyan Membership",
+    y = "Tomato Ortholog Module Membership",
+    color = "Tomato Ortholog Module Color") + 
+  theme(legend.position = "right",
+    legend.title = element_text(face = "bold"))
+
+cyan_prickle_plot  
+```
+
+```{r seq_analysis}
+pacman::p_load(tidyverse, dplyr, ggplot2, cowplot)
+
+black_orthos_of_interest <- black_prickle_to_plot %>% filter(grepl("MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1", egg))
 ```
