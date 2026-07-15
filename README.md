@@ -1,4 +1,4 @@
-#lncSol
+# lncSol
 
 Identification and functional annotation of long non-coding RNAs in Solanaceae
 
