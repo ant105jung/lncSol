@@ -27,28 +27,28 @@ knitr::opts_chunk$set(echo = TRUE,
 ```{r violin-plots}
 install.packages("ggbreak")
 devtools::install_github("teunbrand/legendry")
-pacman::p_load(tidyverse, dplyr, ggplot2, RColorBrewer, Biostrings, patchwork, ggbreak, tispec, legendry, rtracklayer, install = FALSE)
+pacman::p_load(tidyverse, dplyr, scales, ggplot2, RColorBrewer, Biostrings, patchwork, ggbreak, tispec, legendry, rtracklayer, install = FALSE)
 
 egg_transcriptome <- readDNAStringSet("resources/eggplant_transcriptome.fasta")
 egg_coding_transcriptome <- egg_transcriptome[grepl("g", names(egg_transcriptome), ignore.case = TRUE)]
 
-egg_width <- as.data.frame(log10(width(egg_coding_transcriptome)))
+egg_width <- as.data.frame(width(egg_coding_transcriptome))
 colnames(egg_width) <- "value"
 egg_width <- egg_width %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
 
 egg_gc <- as.data.frame(letterFrequency(egg_coding_transcriptome, letters = "GC", as.prob = TRUE))
 colnames(egg_gc) <- "value"
-egg_gc <- egg_gc %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
+egg_gc <- egg_gc %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant") %>% mutate(value = value * 100)
 
 egg_lncRNAtome <- readDNAStringSet("data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.fasta")
 
-egg_lncRNA_width <- as.data.frame(log10(width(egg_lncRNAtome)))
+egg_lncRNA_width <- as.data.frame(width(egg_lncRNAtome))
 colnames(egg_lncRNA_width) <- "value"
 egg_lncRNA_width <- egg_lncRNA_width %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
 
 egg_lncRNA_gc <- as.data.frame(letterFrequency(egg_lncRNAtome, letters = "GC", as.prob = TRUE))
 colnames(egg_lncRNA_gc) <- "value"
-egg_lncRNA_gc <- egg_lncRNA_gc %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
+egg_lncRNA_gc <- egg_lncRNA_gc %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant") %>% mutate(value = value * 100)
 
 egg_quant_lncRNA <- egg_quant %>% filter(grepl("MSTRG", rownames(.)))
 egg_lncRNA <- names(egg_lncRNAtome)
@@ -75,14 +75,14 @@ egg_tau_lncRNA_preavg <- group_by(egg_tau_lncRNA_preavg, organ)
 egg_tau_lncRNA_avg <- egg_tau_lncRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
 
 egg_lncRNA_tau <- calcTau(egg_tau_lncRNA_avg)
-egg_lncRNA_tau <- egg_lncRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
+egg_lncRNA_tau <- egg_lncRNA_tau %>% select(tau) %>% dplyr::rename(value = tau) %>% mutate(transcript = "elncRNA") %>% mutate(species = "Eggplant")
 
 egg_tau_mRNA_preavg <- cbind(t(egg_quant_mRNA), egg_meta_tau)
 egg_tau_mRNA_preavg <- group_by(egg_tau_mRNA_preavg, organ)
 egg_tau_mRNA_avg <- egg_tau_mRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
 
 egg_mRNA_tau <- calcTau(egg_tau_mRNA_avg)
-egg_mRNA_tau <- egg_mRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
+egg_mRNA_tau <- egg_mRNA_tau %>% select(tau) %>% dplyr::rename(value = tau) %>% mutate(transcript = "emRNA") %>% mutate(species = "Eggplant")
 
 egg_total_width <- rbind(egg_lncRNA_width, egg_width)
 
@@ -147,23 +147,23 @@ geom_split_violin <- function(mapping = NULL, data = NULL, stat = "ydensity", po
 tom_transcriptome <- readDNAStringSet("resources/tomato_transcriptome.fasta")
 tom_coding_transcriptome <- tom_transcriptome[grepl("g", names(tom_transcriptome), ignore.case = TRUE)]
 
-tom_width <- as.data.frame(log10(width(tom_coding_transcriptome)))
+tom_width <- as.data.frame(width(tom_coding_transcriptome))
 colnames(tom_width) <- "value"
 tom_width <- tom_width %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
 
 tom_gc <- as.data.frame(letterFrequency(tom_coding_transcriptome, letters = "GC", as.prob = TRUE))
 colnames(tom_gc) <- "value"
-tom_gc <- tom_gc %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
+tom_gc <- tom_gc %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato") %>% mutate(value = value * 100)
 
 tom_lncRNAtome <- readDNAStringSet("data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.fasta")
 
-tom_lncRNA_width <- as.data.frame(log10(width(tom_lncRNAtome)))
+tom_lncRNA_width <- as.data.frame(width(tom_lncRNAtome))
 colnames(tom_lncRNA_width) <- "value"
 tom_lncRNA_width <- tom_lncRNA_width %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
 
 tom_lncRNA_gc <- as.data.frame(letterFrequency(tom_lncRNAtome, letters = "GC", as.prob = TRUE))
 colnames(tom_lncRNA_gc) <- "value"
-tom_lncRNA_gc <- tom_lncRNA_gc %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
+tom_lncRNA_gc <- tom_lncRNA_gc %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato") %>% mutate(value = value * 100)
 
 tom_quant_lncRNA <- tom_quant %>% filter(grepl("MSTRG", rownames(.)))
 tom_lncRNA <- names(tom_lncRNAtome)
@@ -186,14 +186,14 @@ tom_tau_lncRNA_preavg <- group_by(tom_tau_lncRNA_preavg, organ)
 tom_tau_lncRNA_avg <- tom_tau_lncRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
 
 tom_lncRNA_tau <- calcTau(tom_tau_lncRNA_avg)
-tom_lncRNA_tau <- tom_lncRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
+tom_lncRNA_tau <- tom_lncRNA_tau %>% select(tau) %>% dplyr::rename(value = tau) %>% mutate(transcript = "tlncRNA") %>% mutate(species = "Tomato")
 
 tom_tau_mRNA_preavg <- cbind(t(tom_quant_mRNA), tom_meta_tau)
 tom_tau_mRNA_preavg <- group_by(tom_tau_mRNA_preavg, organ)
 tom_tau_mRNA_avg <- tom_tau_mRNA_preavg %>% summarise(across(where(is.numeric), ~ exp(mean(log(.x), na.rm = TRUE)))) %>% select(-organ) %>% t(.) %>% as.data.frame(.)
 
 tom_mRNA_tau <- calcTau(tom_tau_mRNA_avg)
-tom_mRNA_tau <- tom_mRNA_tau %>% select(tau) %>% rename(value = tau) %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
+tom_mRNA_tau <- tom_mRNA_tau %>% select(tau) %>% dplyr::rename(value = tau) %>% mutate(transcript = "tmRNA") %>% mutate(species = "Tomato")
 
 tom_total_width <- rbind(tom_lncRNA_width, tom_width)
 
@@ -209,16 +209,16 @@ total_tau <- rbind(egg_total_tau, tom_total_tau)
 ((ggplot(total_width,
        aes(as.factor(species), value, fill = transcript)) +
   geom_split_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
-    scale_fill_manual(values = c("#B398F4", "#F3C7F8", "#609C54", "#D3F9CD")) + theme(legend.position = "none", axis.text.x = element_blank(), plot.title = element_text(size = 10)) +
-    labs(x = NULL, y = expression(log[10](nt)), title = "Transcript Length") +
-    coord_cartesian(ylim = c(2, 4)) ) + 
+    scale_fill_manual(values = c("#B398F4", "#F3C7F8", "#609C54", "#D3F9CD")) + theme(legend.position = "none", axis.text.x = element_blank(), plot.title = element_text(size = 10)) + scale_y_log10(labels = label_log(base = 10)) + guides(y = guide_axis_logticks()) +
+    labs(x = NULL, y = "nucleotides", title = "Transcript Length") +
+    coord_cartesian(ylim = c(100, 10000))) + 
   
   (ggplot(total_gc,
        aes(as.factor(species), value, fill = transcript)) +
   geom_split_violin(draw_quantiles = c(0.25, 0.5, 0.75)) + 
     scale_fill_manual(values = c("#B398F4", "#F3C7F8", "#609C54", "#D3F9CD")) + theme(legend.position = "none", axis.text.x = element_blank(), plot.title = element_text(size = 10)) +
-    labs(x = NULL, y = "GC percentaage (%)", title = "Nucleotide Composition") +
-    coord_cartesian(ylim = c(0.2, 0.6)) )) /  
+    labs(x = NULL, y = "GC percentage (%)", title = "Nucleotide Composition") +
+    coord_cartesian(ylim = c(20, 60)) )) /  
   
   (ggplot(total_tau,
        aes(as.factor(species), value, fill = transcript)) +
@@ -229,6 +229,13 @@ total_tau <- rbind(egg_total_tau, tom_total_tau)
 
   plot_annotation(title = "LncRNA vs mRNA characteristics")
 
+t.test(egg_lncRNA_gc$value, egg_gc$value)
+t.test(egg_lncRNA_width$value, egg_width$value)
+t.test(egg_lncRNA_tau$value, egg_mRNA_tau$value)
+
+t.test(tom_lncRNA_gc$value, tom_gc$value)
+t.test(tom_lncRNA_width$value, tom_width$value)
+t.test(tom_lncRNA_tau$value, tom_mRNA_tau$value)
 ```
 
 ```{r exp_heatmaps}
@@ -256,20 +263,20 @@ egg_lncRNA_long_meta <- egg_lncRNA_long %>%
 egg_lncRNA_peaks <- egg_lncRNA_long_meta %>% 
   group_by(transcript) %>% 
   slice_max(order_by = expression, n = 1, with_ties = F) %>% 
-  rename(peaked_at_organ = organ) %>% 
-  rename(peaked_at_sample = sample)
+  dplyr::rename(peaked_at_organ = organ) %>% 
+  dplyr::rename(peaked_at_sample = sample)
 
 egg_lncRNA_num_peaks_organ <- egg_lncRNA_peaks %>% 
   group_by(peaked_at_organ) %>% 
   count() %>% 
   arrange(-n) %>%
-  rename(n_organ = n)
+  dplyr::rename(n_organ = n)
 
 egg_lncRNA_num_peaks_sample <- egg_lncRNA_peaks %>% 
   group_by(peaked_at_sample) %>% 
   count() %>% 
   arrange(-n) %>%
-  rename(n_sample = n)
+  dplyr::rename(n_sample = n)
 
 egg_lncRNA_peaks_reordered <- egg_lncRNA_peaks %>% 
   inner_join(egg_lncRNA_num_peaks_organ, by = "peaked_at_organ") %>% 
@@ -331,20 +338,20 @@ tom_lncRNA_long_meta <- tom_lncRNA_long %>% mutate(organ = 0) %>%
 tom_lncRNA_peaks <- tom_lncRNA_long_meta %>% 
   group_by(transcript) %>% 
   slice_max(order_by = expression, n = 1, with_ties = F) %>% 
-  rename(peaked_at_organ = organ) %>% 
-  rename(peaked_at_sample = sample)
+  dplyr::rename(peaked_at_organ = organ) %>% 
+  dplyr::rename(peaked_at_sample = sample)
 
 tom_lncRNA_num_peaks_organ <- tom_lncRNA_peaks %>% 
   group_by(peaked_at_organ) %>% 
   count() %>% 
   arrange(-n) %>%
-  rename(n_organ = n)
+  dplyr::rename(n_organ = n)
 
 tom_lncRNA_num_peaks_sample <- tom_lncRNA_peaks %>% 
   group_by(peaked_at_sample) %>% 
   count() %>% 
   arrange(-n) %>%
-  rename(n_sample = n)
+  dplyr::rename(n_sample = n)
 
 tom_lncRNA_peaks_reordered <- tom_lncRNA_peaks %>% 
   inner_join(tom_lncRNA_num_peaks_organ, by = "peaked_at_organ") %>% 
@@ -523,7 +530,7 @@ egg_corvals$row <- factor(egg_corvals$row, levels = unique(egg_peak_values_reord
 
 egg_y_labs <- egg_peak_values_reordered %>% mutate(row = ifelse(value > 0.75, row, "")) %>% arrange(n, value) %>% .$row
 
-egg_reordered_heatmap <- egg_corvals %>% 
+egg_reordered_wgcna_heatmap <- egg_corvals %>% 
   ggplot(aes(x = col, y = row)) +
   geom_tile(aes(fill = value)) +
   scale_fill_gradientn(limits = c(-1,1), colors = brewer.pal(9, "PuOr")) +
@@ -532,7 +539,7 @@ egg_reordered_heatmap <- egg_corvals %>%
   labs(y = "Gene Module", x = "Tissue", title = "Eggplant WGCNA-Tissue Correlation", fill = "Pearson") +
   guides(fill = guide_colorbar(barheight = unit(14, "cm"), display = "gradient")) + scale_y_discrete(labels = egg_y_labs)
 
-egg_reordered_heatmap
+egg_reordered_wgcna_heatmap
 
 
 # 6B. Gene membership ---------------
@@ -674,7 +681,7 @@ tom_corvals$row <- factor(tom_corvals$row, levels = unique(tom_peak_values_reord
 
 tom_y_labs <- tom_peak_values_reordered %>% mutate(row = ifelse(value > 0.75, row, "")) %>% arrange(n, value) %>% .$row
 
-tom_reordered_heatmap <- tom_corvals %>% 
+tom_reordered_wgcna_heatmap <- tom_corvals %>% 
   ggplot(aes(x = col, y = row)) +
   geom_tile(aes(fill = value)) +
   scale_fill_gradientn(limits = c(-1,1), colors = brewer.pal(9, "PiYG")) +
@@ -683,7 +690,7 @@ tom_reordered_heatmap <- tom_corvals %>%
   labs(y = "Gene Module", x = "Tissue", title = "Tomato WGCNA-Tissue Correlation", fill = "Pearson") +
   guides(fill = guide_colorbar(barheight = unit(14, "cm"), display = "gradient")) + scale_y_discrete(labels = tom_y_labs)
 
-tom_reordered_heatmap
+tom_reordered_wgcna_heatmap
 
 # 6B. Gene membership ---------------
 
@@ -775,7 +782,7 @@ egg_black_goResults <- GenTable(egg_black_GOdata,
                       orderBy = "classicFisher",
                       topNodes = 10)
 
-egg_black_goResults <- egg_black_goResults %>% mutate(GeneRatio = Annotated / length(geneList)) %>% arrange(GeneRatio) %>% arrange(GeneRatio) %>% mutate(classicFisher = log10(as.numeric(classicFisher)))
+egg_black_goResults <- egg_black_goResults %>% mutate(GeneRatio = Annotated / length(which(egg_bwnet$colors == "black"))) %>% arrange(GeneRatio) %>% arrange(GeneRatio) %>% mutate(classicFisher = log10(as.numeric(classicFisher)))
 
 egg_black_goResults$Term <- factor(egg_black_goResults$Term, levels = unique(egg_black_goResults$Term))
 
@@ -844,7 +851,7 @@ tom_green_goResults <- GenTable(tom_green_GOdata,
                       orderBy = "classicFisher",
                       topNodes = 10)
 
-tom_green_goResults <- tom_green_goResults %>% mutate(GeneRatio = Annotated / length(geneList)) %>% arrange(GeneRatio) %>% arrange(GeneRatio) %>% mutate(classicFisher = log10(as.numeric(classicFisher)))
+tom_green_goResults <- tom_green_goResults %>% mutate(GeneRatio = Annotated / length(which(tom_bwnet$colors == "green"))) %>% arrange(GeneRatio) %>% arrange(GeneRatio) %>% mutate(classicFisher = log10(as.numeric(classicFisher)))
 
 tom_green_goResults$Term <- factor(tom_green_goResults$Term, levels = unique(tom_green_goResults$Term))
 
@@ -1091,7 +1098,242 @@ cyan_prickle_plot
 ```
 
 ```{r seq_analysis}
-pacman::p_load(tidyverse, dplyr, ggplot2, cowplot)
+pacman::p_load(tidyverse, cowplot)
 
-black_orthos_of_interest <- black_prickle_to_plot %>% filter(grepl("MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1", egg))
+black_orthos_of_interest <- black_prickle_to_plot %>% filter(grepl("MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1|MSTRG.31543.1", egg))
+
+egg_orthos_of_interest <- "MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1|MSTRG.31543.1"
+tom_orthos_of_interest <- "MSTRG.3642.1|MSTRG.14560.1|MSTRG.14561.1|MSTRG.10412.1|MSTRG.31991.1|MSTRG.5270.1"
 ```
+
+```{bash fasim-target}
+unzip resources/Fasim-LongTarget-main.zip -d resources
+
+cd resources/Fasim-LongTarget-main/
+
+g++ Fasim-LongTarget.cpp ssw_cpp.cpp sswNew.cpp -O -msse2 -o fasim
+
+cd ../../..
+
+resources/fasim -f1 resources/galaxy_bari06.fa -f2 data/04_characterization/egg_06fasim/egg_of_interest.fasta -O data/04_characterization/egg_06fasim/output
+
+/programs/seqkit-2.13.0/seqkit split --by-id galaxy_bari06.fa
+
+egg_fasim () {
+  base=$(basename "$1" .fa)
+  /workdir/aj564/fasim -f1 $1 -f2 egg_of_interest.fasta
+}
+export -f egg_fasim
+
+parallel egg_fasim ::: galaxy_bari06.part_ch*
+
+for file in *TFO*; do [ -f "$file" ] && mv -v -- "$file" "${file:1}"; done
+```
+
+```{bash proximal-mRNAs}
+grep -E "MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1|MSTRG.31543.1" data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.gtf > data/04_characterization/egg_07proximal/egg_lncRNA_interest.gtf
+
+bedtools intersect -wao -a data/04_characterization/egg_07proximal/egg_lncRNA_interest.gtf -b resources/eggplant_transcriptome.gtf > data/04_characterization/egg_07proimal/egg_overlaps.txt
+
+grep -E "MSTRG.3642.1|MSTRG.14560.1|MSTRG.14561.1|MSTRG.10412.1|MSTRG.31991.1|MSTRG.5270.1" data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf > data/04_characterization/tom_07proximal/tom_lncRNA_interest.gtf
+
+bedtools intersect -wao -a data/04_characterization/tom_07proximal/tom_lncRNA_interest.gtf -b resources/tomato_transcriptome.gtf > data/04_characterization/tom_07proximal/tom_overlaps.txt
+```
+
+```{r proximal-plot}
+pacman::p_load(tidyverse)
+
+egg_proximal_genes <- as.data.frame(t(as.data.frame(strsplit(readLines("data/04_characterization/egg_07proximal/egg_overlaps.txt"), split = "\t"))), row.names = FALSE) %>% filter(V12 == "gene") %>% select(V1, V9, V4, V5, V7, V18, V13, V14, V16) %>% mutate(V4 = as.numeric(V4) + 10000) %>% mutate(V5 = as.numeric(V5) - 10000) %>% mutate(V9 = strsplit(V9, split = "\"")) %>% mutate(V9 = sapply(.$V9, function(x) grep("MSTRG", x, value = TRUE)[1])) %>% dplyr::rename(chr = V1, lncRNA = V9, lnc_start = V4, lnc_end = V5, lnc_strand = V7, mRNA = V18, m_start = V13, m_end = V14, m_strand = V16) %>% mutate(lnc_start = as.numeric(lnc_start)) %>% mutate(lnc_end = as.numeric(lnc_end)) %>% mutate(m_start = as.numeric(m_start)) %>% mutate(m_end = as.numeric(m_end))
+
+egg_proximal_genes_annotated <- egg_proximal_genes %>% mutate(distance = ifelse((abs(m_start - lnc_end) < abs(lnc_start - m_end)), m_start - lnc_end, m_end - lnc_start)) %>% rowwise() %>% mutate(exp_cor = cor(as.vector(egg_quant[lncRNA, ]), as.vector(egg_quant[mRNA, ]))[1]) %>% mutate(lnc_color = "black") %>% mutate(m_color = egg_bwnet$colors[mRNA]) %>% mutate(lnc_MM = egg_membership_cor[paste0("ME", lnc_color), lncRNA]) %>% mutate(m_MM = egg_membership_cor[paste0("ME", m_color), mRNA]) %>% inner_join(., egg_go, by = c("mRNA" = "#query"))
+
+tom_proximal_genes <- as.data.frame(t(as.data.frame(strsplit(readLines("data/04_characterization/tom_07proximal/tom_overlaps.txt"), split = "\t"))), row.names = FALSE) %>% 
+  filter(V12 == "exon") %>% 
+  select(V1, V9, V4, V5, V7, V18, V13, V14, V16) %>% 
+  mutate(V4 = as.numeric(V4) + 10000) %>% 
+  mutate(V5 = as.numeric(V5) - 10000) %>% 
+  mutate(V9 = strsplit(V9, split = "\"")) %>% 
+  mutate(V9 = sapply(.$V9, function(x) grep("MSTRG", x, value = TRUE)[1])) %>%
+  dplyr::rename(chr = V1, lncRNA = V9, lnc_start = V4, lnc_end = V5, lnc_strand = V7, mRNA = V18, m_start = V13, m_end = V14, m_strand = V16) %>% 
+  mutate(lnc_start = as.numeric(lnc_start)) %>% 
+  mutate(lnc_end = as.numeric(lnc_end)) %>% 
+  mutate(m_start = as.numeric(m_start)) %>% 
+  mutate(m_end = as.numeric(m_end)) %>% mutate(mRNA = sapply(strsplit(mRNA, split = "\""), function(x) grep("mRNA", x, value = TRUE)[1]))
+
+tom_proximal_merged <- tom_proximal_genes %>% group_by(mRNA) %>%
+  mutate(m_end = max(m_end, na.rm = TRUE)) %>% 
+  mutate(m_start = min(m_start, na.rm = TRUE)) %>%
+  distinct()
+
+tom_proximal_genes_annotated <- tom_proximal_merged %>% mutate(distance = ifelse((abs(m_start - lnc_end) < abs(lnc_start - m_end)), m_start - lnc_end, m_end - lnc_start)) %>% rowwise() %>% mutate(exp_cor = cor(as.vector(tom_quant[lncRNA, ]), as.vector(tom_quant[mRNA, ]))[1]) %>% mutate(lnc_color = tom_bwnet$colors[lncRNA]) %>% mutate(m_color = tom_bwnet$colors[mRNA]) %>% mutate(lnc_MM = tom_membership_cor[paste0("ME", lnc_color), lncRNA]) %>% mutate(m_MM = tom_membership_cor[paste0("ME", m_color), mRNA]) %>% left_join(., tom_go, by = c("mRNA" = "query"))
+```
+
+```{bash upstream-binding}
+grep "start_codon" resources/eggplant_transcriptome.gtf | awk 'BEGIN {FS=OFS="\t"} !/^#/ {$4 = $4 - 1000} 1' > resources/eggplant_prom_region.gtf
+```
+
+```{r upstream-binding}
+pacman::p_load(dplyr, readr, janitor, topGO)
+
+egg_prom <- read.delim("resources/eggplant_prom_region.gtf", header = FALSE) %>% filter(V1 != "ch00") %>% dplyr::rename(prom_chr = V1, prom_start = V4, prom_end = V5)
+
+egg_4918_TFO <- strsplit(iconv(read_lines("data/04_characterization/egg_06fasim/MSTRG.4918.1-galaxy_bari06.part_ch01-TFOsorted"), from = "UTF-8", to = "UTF-8", sub = "byte"), split = "\t") 
+
+for (i in 1:length(egg_4918_TFO)){
+  if (length(egg_4918_TFO[[i]]) != 19){
+    egg_4918_TFO[[i]] <- c(egg_4918_TFO[[i]], character(19 - length(egg_4918_TFO[[i]])))
+  }
+}
+
+egg_4918_TFO <- data.frame(do.call(rbind, egg_4918_TFO))
+
+egg_4918_TFO <- egg_4918_TFO %>% janitor::row_to_names(row = 1)
+
+egg_4918_TFO <- egg_4918_TFO %>% mutate(Chr = "ch01")
+
+for (i in 2:12) {
+  temp <- strsplit(iconv(read_lines(sprintf("data/04_characterization/egg_06fasim/MSTRG.4918.1-galaxy_bari06.part_ch%02d-TFOsorted", i)), from = "UTF-8", to = "UTF-8", sub = "byte"), split = "\t")
+
+  for (j in 1:length(temp)){
+    length(temp[[j]]) <- 19
+  }
+  
+  for (j in 1:length(temp)){
+    if (length(temp[[j]]) != 19){
+      print(as.character(j))
+    }
+  }
+
+  temp <- data.frame(do.call(rbind, temp))
+
+  temp <- temp %>% janitor::row_to_names(row = 1)
+
+  temp <- temp %>% mutate(Chr = sprintf("ch%02d", i))
+  
+  egg_4918_TFO <- rbind(egg_4918_TFO, temp)
+}
+
+egg_4918_TFO_clean <- egg_4918_TFO %>% filter(!is.na(QueryStart)) %>% mutate(StartInGenome = as.numeric(StartInGenome)) %>% mutate(EndInGenome = as.numeric(EndInGenome))
+
+egg_4918_TFO_prom <- rbind(inner_join(egg_prom, egg_4918_TFO_clean, by = join_by(prom_chr == Chr, prom_start <= StartInGenome, prom_end >= StartInGenome)), inner_join(egg_prom, egg_4918_TFO_clean, by = join_by(prom_chr == Chr, prom_start <= EndInGenome, prom_start >= StartInGenome))) %>% distinct()
+
+egg_4918_TFO_prom_clean <- egg_4918_TFO_prom %>% mutate(V9 = strsplit(V9, split = ";| ")) %>% mutate(V9 = sapply(.$V9, function(x) grep("g", x, value = TRUE)[1]))
+
+egg_4918_genes <- egg_4918_TFO_prom_clean %>% mutate(`Nt(bp)` = as.numeric(`Nt(bp)`)) %>% filter(`Nt(bp)` >= 100) %>% .$V9 %>% unique()
+
+geneList <- factor(as.integer(egg_all_genes %in% egg_4918_genes))
+names(geneList) <- egg_all_genes
+  
+for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/egg_06fasim/egg_4918_GO/", annot_type, ".csv"), row.names = FALSE)
+}
+
+
+egg_20439_TFO <- strsplit(iconv(read_lines("data/04_characterization/egg_06fasim/MSTRG.20439.1-galaxy_bari06.part_ch02-TFOsorted"), from = "UTF-8", to = "UTF-8", sub = "byte"), split = "\t")
+
+for (i in 1:length(egg_20439_TFO)){
+  length(egg_20439_TFO[[i]]) <- 19
+}
+
+egg_20439_TFO <- data.frame(do.call(rbind, egg_20439_TFO))
+
+egg_20439_TFO <- egg_20439_TFO %>% janitor::row_to_names(row = 1)
+
+egg_20439_TFO <- egg_20439_TFO %>% mutate(Chr = "ch02")
+
+for (i in 3:12) {
+  temp <- strsplit(iconv(read_lines(sprintf("data/04_characterization/egg_06fasim/MSTRG.20439.1-galaxy_bari06.part_ch%02d-TFOsorted", i)), from = "UTF-8", to = "UTF-8", sub = "byte"), split = "\t")
+
+  for (j in 1:length(temp)){
+    length(temp[[j]]) <- 19
+  }
+
+  temp <- data.frame(do.call(rbind, temp))
+
+  temp <- temp %>% janitor::row_to_names(row = 1)
+
+  temp <- temp %>% mutate(Chr = sprintf("ch%02d", i))
+  
+  egg_20439_TFO <- rbind(egg_20439_TFO, temp)
+}
+
+egg_20439_TFO_clean <- egg_20439_TFO %>% filter(!is.na(QueryStart)) %>% mutate(StartInGenome = as.numeric(StartInGenome)) %>% mutate(EndInGenome = as.numeric(EndInGenome))
+
+egg_20439_TFO_prom <- rbind(inner_join(egg_prom, egg_20439_TFO_clean, by = join_by(prom_chr == Chr, prom_start <= StartInGenome, prom_end >= StartInGenome)), inner_join(egg_prom, egg_20439_TFO_clean, by = join_by(prom_chr == Chr, prom_start <= EndInGenome, prom_start >= StartInGenome))) %>% distinct()
+
+egg_20439_TFO_prom_clean <- egg_20439_TFO_prom %>% mutate(V9 = strsplit(V9, split = ";| ")) %>% mutate(V9 = sapply(.$V9, function(x) grep("g", x, value = TRUE)[1]))
+
+egg_20439_genes <- egg_20439_TFO_prom_clean %>% mutate(`Nt(bp)` = as.numeric(`Nt(bp)`)) %>% filter(`Nt(bp)` >= 100) %>% .$V9 %>% unique()
+
+geneList <- factor(as.integer(egg_all_genes %in% egg_20439_genes))
+names(geneList) <- egg_all_genes
+  
+for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/egg_06fasim/egg_20439_GO/", annot_type, ".csv"), row.names = FALSE)
+}
+
+egg_combined_genes <- egg_20439_genes[egg_20439_genes %in% egg_4918_genes]
+
+geneList <- factor(as.integer(egg_all_genes %in% egg_combined_genes))
+names(geneList) <- egg_all_genes
+  
+for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/egg_06fasim/", annot_type, ".csv"), row.names = FALSE)
+}
+
+egg_combined_genes[egg_combined_genes %in% names(which(egg_bwnet$colors == "black"))]
+
+#20439 needs ch01 and ch07
+```
+

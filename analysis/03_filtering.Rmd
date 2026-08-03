@@ -585,17 +585,21 @@ grep 'TPM3in3 \"high\"' data/03_filtering/tom_05blastn/tom_sol_annotated.gtf | g
 #chart
 grep 'TPM3in3 \"high\"' data/03_filtering/tom_05blastn/tom_sol_annotated.gtf | grep "class_code \"u\"" | wc -l
 
-grep "class_code \"u\"" data/03_filtering/tom_06lncRNA/tom_lncRNA_genes.gtf | grep "known lncRNA" | wc -l
+grep "class_code \"u\"" data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf | wc -l
+grep "class_code \"x\"" data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf | wc -l
 
-grep "class_code \"u\"" data/03_filtering/tom_06lncRNA/tom_lncRNA_genes.gtf | grep "no Solanum hit" | wc -l
+grep "class_code \"u\"" data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.gtf | wc -l
+grep "class_code \"x\"" data/03_filtering/egg_07lncRNA/egg_lncRNA_genes.gtf | wc -l
+
+grep "class_code \"u\"" data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf | grep "no Solanum hit" | wc -l
 
 grep 'TPM3in3 \"high\"' data/03_filtering/tom_05blastn/tom_sol_annotated.gtf | grep "class_code \"u\"" | grep "no Solanum hit" | grep "\"coding\"\|\"ORFs\"\|\"known\"\|\"trna or rrna\"" | wc -l
 
 grep 'TPM3in3 \"high\"' data/03_filtering/tom_05blastn/tom_sol_annotated.gtf | grep "class_code \"x\"" | wc -l
 
-grep "class_code \"x\"" data/03_filtering/tom_06lncRNA/tom_lncRNA_genes.gtf | grep "known lncRNA" | wc -l
+grep "class_code \"x\"" data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf | grep "known lncRNA" | wc -l
 
-grep "class_code \"x\"" data/03_filtering/tom_06lncRNA/tom_lncRNA_genes.gtf | grep "no Solanum hit" | wc -l
+grep "class_code \"x\"" data/03_filtering/tom_07lncRNA/tom_lncRNA_genes.gtf | grep "no Solanum hit" | wc -l
 
 grep 'TPM3in3 \"high\"' data/03_filtering/tom_05blastn/tom_sol_annotated.gtf | grep "class_code \"x\"" | grep "no Solanum hit" | grep "\"coding\"\|\"ORFs\"\|\"known\"\|\"trna or rrna\"" | wc -l
 ```
@@ -616,13 +620,13 @@ library(VennDiagram)
 egg_gtf <- rtracklayer::import('data/03_filtering/egg_06EDTA/egg_tir_annotated.gtf')
 egg_gtf_df=as.data.frame(egg_gtf)
 
-egg_noncoding <- as.character((egg_gtf_df %>% filter(CPC2 == "noncoding") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+egg_noncoding <- as.character((egg_gtf_df %>% filter(CPC2 == "noncoding") %>% dplyr::select(transcript_id))[,1])
 
-egg_nonORF <- as.character((egg_gtf_df %>% filter(TransDecoder == "nonORFs") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+egg_nonORF <- as.character((egg_gtf_df %>% filter(TransDecoder == "nonORFs") %>% dplyr::select(transcript_id))[,1])
 
-egg_newRNA <- as.character((egg_gtf_df %>% filter(grepl("not known|pre-miRNA|snoRNA", RFAM) & Athal == "blast \"no Athal hit" & LTR == "no LTR" & TIR == "no TIR") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+egg_newRNA <- as.character((egg_gtf_df %>% filter(grepl("not known|pre-miRNA|snoRNA", RFAM) & Athal == "blast \"no Athal hit" & LTR == "no LTR" & TIR == "no TIR") %>% dplyr::select(transcript_id))[,1])
 
-egg_highexp <- as.character((egg_gtf_df %>% filter(TPM3in3 == "high") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+egg_highexp <- as.character((egg_gtf_df %>% filter(TPM3in3 == "high") %>% dplyr::select(transcript_id))[,1])
 
 myCol <- brewer.pal(4, "Accent")
 
@@ -646,20 +650,20 @@ venn.diagram(x = list(egg_noncoding, egg_nonORF, egg_newRNA, egg_highexp), categ
         main.fontfamily = "sans",
         main.cex = 2.5,
         main.pos = c(0.5, 0.99),
-        sub = "novel lncRNA filters",
+        sub = "hc-lncRNA filters",
         sub.fontfamily = "sans",
         sub.pos = c(0.5, 0.94))
 #tom
 tom_gtf <- rtracklayer::import('data/03_filtering/tom_06EDTA/tom_tir_annotated.gtf')
 tom_gtf_df=as.data.frame(tom_gtf)
 
-tom_noncoding <- as.character((tom_gtf_df %>% filter(CPC2 == "noncoding") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+tom_noncoding <- as.character((tom_gtf_df %>% filter(CPC2 == "noncoding") %>% dplyr::select(transcript_id))[,1])
 
-tom_nonORF <- as.character((tom_gtf_df %>% filter(TransDecoder == "nonORFs") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+tom_nonORF <- as.character((tom_gtf_df %>% filter(TransDecoder == "nonORFs") %>% dplyr::select(transcript_id))[,1])
 
-tom_newRNA <- as.character((tom_gtf_df %>% filter(grepl("not known|pre-miRNA|snoRNA", RFAM) & Athal == "blast \"no Athal hit" & LTR == "no LTR" & TIR == "no TIR") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+tom_newRNA <- as.character((tom_gtf_df %>% filter(grepl("not known|pre-miRNA|snoRNA", RFAM) & Athal == "blast \"no Athal hit" & LTR == "no LTR" & TIR == "no TIR") %>% dplyr::select(transcript_id))[,1])
 
-tom_highexp <- as.character((tom_gtf_df %>% filter(TPM3in3 == "high") %>% filter(Solanum == "blast \"no Solanum hit") %>% dplyr::select(transcript_id))[,1])
+tom_highexp <- as.character((tom_gtf_df %>% filter(TPM3in3 == "high") %>% dplyr::select(transcript_id))[,1])
 
 myCol <- brewer.pal(4, "Accent")
 
@@ -683,7 +687,7 @@ venn.diagram(x = list(tom_noncoding, tom_nonORF, tom_newRNA, tom_highexp), categ
         main.fontfamily = "sans",
         main.cex = 2.5,
         main.pos = c(0.5, 0.99),
-        sub = "novel lncRNA filters",
+        sub = "hc-lncRNA filters",
         sub.fontfamily = "sans",
         sub.pos = c(0.5, 0.94))
 ```

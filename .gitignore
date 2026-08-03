@@ -10,8 +10,9 @@
 /target
 resources
 eggtom_lncRNA.Rproj
-genespace.RData
-WGCNA_wip.RData
+*.RData
+analysis/01_preprocessing.Rmd
+analysis/02_classify_transcripts.Rmd
 
 data/00_raw_reads
 data/01_preprocessing
