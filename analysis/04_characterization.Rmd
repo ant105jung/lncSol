@@ -394,7 +394,7 @@ tom_reordered_heatmap + gt::gt(tom_x_key)
 ```
 
 ```{r WGCNA}
-pacman::p_load(WGCNA, tidyverse, CorLevelPlot, gridExtra, dplyr, RColorBrewer, install = FALSE)
+pacman::p_load(WGCNA, tidyverse, CorLevelPlot, gridExtra, dplyr, RColorBrewer, igraph, install = FALSE)
 
 allowWGCNAThreads()
 
@@ -453,7 +453,9 @@ egg_bwnet <- blockwiseModules(t(egg_quant),
                  minModuleSize = 50, 
                  reassignThreshold = 0, 
                  mergeCutHeight = 0.2, 
-                 deepSplit = 2)
+                 deepSplit = 2,
+                 saveTOMs = TRUE,
+                 saveTOMFileBase = "egg")
 
 # 5. Module Eigengenes ---------------------------------------------------------
 egg_module_eigengenes <- egg_bwnet$MEs
@@ -548,6 +550,12 @@ egg_membership_cor <- cor(egg_module_eigengenes, t(egg_quant), use = 'p')
 egg_membership_pvals <- corPvalueStudent(egg_membership_cor, egg_nSamples)
 egg_connectivity <- signedKME(t(egg_quant), egg_module_eigengenes)
 
+egg_black_connectivity <- intramodularConnectivity.fromExpr(t(egg_quant), colors = egg_bwnet$colors, power = egg_soft_power, getWholeNetworkConnectivity = FALSE, ignoreColors = unique(egg_bwnet$colors)[unique(egg_bwnet$colors) != "black"], scaleByMax = TRUE)
+
+names(egg_black_connectivity) <- rownames(egg_quant)
+egg_black_connectivity <- egg_black_connectivity[!is.na(egg_black_connectivity)]
+egg_black_connectivity <- as.data.frame(egg_black_connectivity) %>% arrange(-egg_black_connectivity)
+
 egg_black_lncRNA <- grep("MSTRG", names(which(egg_bwnet$colors == "black")), value = TRUE)
 egg_cyan_lncRNA <- grep("MSTRG", names(which(egg_bwnet$colors == "cyan")), value = TRUE)
 
@@ -612,7 +620,9 @@ tom_bwnet <- blockwiseModules(t(tom_quant),
                  minModuleSize = 50, 
                  reassignThreshold = 0, 
                  mergeCutHeight = 0.2, 
-                 deepSplit = 2)
+                 deepSplit = 2,
+                 saveTOMFileBase = "tom",
+                 saveTOMs = TRUE)
 
 # 5. Module Eigengenes ---------------------------------------------------------
 tom_module_eigengenes <- tom_bwnet$MEs
@@ -1102,7 +1112,7 @@ pacman::p_load(tidyverse, cowplot)
 
 black_orthos_of_interest <- black_prickle_to_plot %>% filter(grepl("MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1|MSTRG.31543.1", egg))
 
-egg_orthos_of_interest <- "MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1|MSTRG.31543.1"
+egg_orthos_of_interest <- "MSTRG.12327.1|MSTRG.20439.1|MSTRG.33641.1|MSTRG.4918.1|MSTRG.31543.1|MSTRG.24717.1"
 tom_orthos_of_interest <- "MSTRG.3642.1|MSTRG.14560.1|MSTRG.14561.1|MSTRG.10412.1|MSTRG.31991.1|MSTRG.5270.1"
 ```
 
@@ -1140,12 +1150,36 @@ grep -E "MSTRG.3642.1|MSTRG.14560.1|MSTRG.14561.1|MSTRG.10412.1|MSTRG.31991.1|MS
 bedtools intersect -wao -a data/04_characterization/tom_07proximal/tom_lncRNA_interest.gtf -b resources/tomato_transcriptome.gtf > data/04_characterization/tom_07proximal/tom_overlaps.txt
 ```
 
-```{r proximal-plot}
+```{r proximal-mRNAs}
 pacman::p_load(tidyverse)
 
 egg_proximal_genes <- as.data.frame(t(as.data.frame(strsplit(readLines("data/04_characterization/egg_07proximal/egg_overlaps.txt"), split = "\t"))), row.names = FALSE) %>% filter(V12 == "gene") %>% select(V1, V9, V4, V5, V7, V18, V13, V14, V16) %>% mutate(V4 = as.numeric(V4) + 10000) %>% mutate(V5 = as.numeric(V5) - 10000) %>% mutate(V9 = strsplit(V9, split = "\"")) %>% mutate(V9 = sapply(.$V9, function(x) grep("MSTRG", x, value = TRUE)[1])) %>% dplyr::rename(chr = V1, lncRNA = V9, lnc_start = V4, lnc_end = V5, lnc_strand = V7, mRNA = V18, m_start = V13, m_end = V14, m_strand = V16) %>% mutate(lnc_start = as.numeric(lnc_start)) %>% mutate(lnc_end = as.numeric(lnc_end)) %>% mutate(m_start = as.numeric(m_start)) %>% mutate(m_end = as.numeric(m_end))
 
 egg_proximal_genes_annotated <- egg_proximal_genes %>% mutate(distance = ifelse((abs(m_start - lnc_end) < abs(lnc_start - m_end)), m_start - lnc_end, m_end - lnc_start)) %>% rowwise() %>% mutate(exp_cor = cor(as.vector(egg_quant[lncRNA, ]), as.vector(egg_quant[mRNA, ]))[1]) %>% mutate(lnc_color = "black") %>% mutate(m_color = egg_bwnet$colors[mRNA]) %>% mutate(lnc_MM = egg_membership_cor[paste0("ME", lnc_color), lncRNA]) %>% mutate(m_MM = egg_membership_cor[paste0("ME", m_color), mRNA]) %>% inner_join(., egg_go, by = c("mRNA" = "#query"))
+
+geneList <- factor(as.integer(egg_all_genes %in% egg_proximal_genes_annotated$mRNA))
+names(geneList) <- egg_all_genes
+  
+for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/egg_07proximal/", annot_type, ".csv"), row.names = FALSE)
+}
 
 tom_proximal_genes <- as.data.frame(t(as.data.frame(strsplit(readLines("data/04_characterization/tom_07proximal/tom_overlaps.txt"), split = "\t"))), row.names = FALSE) %>% 
   filter(V12 == "exon") %>% 
@@ -1166,6 +1200,31 @@ tom_proximal_merged <- tom_proximal_genes %>% group_by(mRNA) %>%
   distinct()
 
 tom_proximal_genes_annotated <- tom_proximal_merged %>% mutate(distance = ifelse((abs(m_start - lnc_end) < abs(lnc_start - m_end)), m_start - lnc_end, m_end - lnc_start)) %>% rowwise() %>% mutate(exp_cor = cor(as.vector(tom_quant[lncRNA, ]), as.vector(tom_quant[mRNA, ]))[1]) %>% mutate(lnc_color = tom_bwnet$colors[lncRNA]) %>% mutate(m_color = tom_bwnet$colors[mRNA]) %>% mutate(lnc_MM = tom_membership_cor[paste0("ME", lnc_color), lncRNA]) %>% mutate(m_MM = tom_membership_cor[paste0("ME", m_color), mRNA]) %>% left_join(., tom_go, by = c("mRNA" = "query"))
+
+
+geneList <- factor(as.integer(tom_all_genes %in% tom_proximal_genes_annotated$mRNA))
+names(geneList) <- tom_all_genes
+  
+for (annot_type in c("BP", "CC", "MF")){
+# === CREATE topGO OBJECT ===
+  GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = tom_geneID2GO)
+
+# ==="topGO"# === RUN FISHER TEST ===
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+# === OUTPUT RESULTS ===
+goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+print(goResults)
+write.csv(goResults, file = paste0("data/04_characterization/tom_07proximal/", annot_type, ".csv"), row.names = FALSE)
+}
 ```
 
 ```{bash upstream-binding}
@@ -1219,7 +1278,7 @@ egg_4918_TFO_prom <- rbind(inner_join(egg_prom, egg_4918_TFO_clean, by = join_by
 
 egg_4918_TFO_prom_clean <- egg_4918_TFO_prom %>% mutate(V9 = strsplit(V9, split = ";| ")) %>% mutate(V9 = sapply(.$V9, function(x) grep("g", x, value = TRUE)[1]))
 
-egg_4918_genes <- egg_4918_TFO_prom_clean %>% mutate(`Nt(bp)` = as.numeric(`Nt(bp)`)) %>% filter(`Nt(bp)` >= 100) %>% .$V9 %>% unique()
+egg_4918_genes <- egg_4918_TFO_prom_clean %>% mutate(Score = as.numeric(Score)) %>% filter(Score >= 150)
 
 geneList <- factor(as.integer(egg_all_genes %in% egg_4918_genes))
 names(geneList) <- egg_all_genes
@@ -1245,6 +1304,8 @@ print(goResults)
 write.csv(goResults, file = paste0("data/04_characterization/egg_06fasim/egg_4918_GO/", annot_type, ".csv"), row.names = FALSE)
 }
 
+
+#20439 needs ch01 and ch07
 
 egg_20439_TFO <- strsplit(iconv(read_lines("data/04_characterization/egg_06fasim/MSTRG.20439.1-galaxy_bari06.part_ch02-TFOsorted"), from = "UTF-8", to = "UTF-8", sub = "byte"), split = "\t")
 
@@ -1333,7 +1394,350 @@ write.csv(goResults, file = paste0("data/04_characterization/egg_06fasim/", anno
 }
 
 egg_combined_genes[egg_combined_genes %in% names(which(egg_bwnet$colors == "black"))]
+```
 
-#20439 needs ch01 and ch07
+```{r checks}
+pacman::p_load(dplyr, ggplot2, tidyverse, RColorBrewer)
+
+egg_ortho_vs_all <- cor(t(egg_quant)[,c("MSTRG.12327.1","MSTRG.20439.1","MSTRG.33641.1","MSTRG.4918.1","MSTRG.31543.1","MSTRG.24717.1")], t(egg_quant))
+
+egg_ortho_atlas <- egg_quant[c("MSTRG.12327.1","MSTRG.20439.1","MSTRG.33641.1","MSTRG.4918.1","MSTRG.31543.1","MSTRG.24717.1"),]
+
+egg_ortho_vs_black <- as.data.frame(egg_ortho_vs_all[,names(which(egg_bwnet$colors == "black"))]) %>% tibble::rownames_to_column()
+
+egg_ortho_vs_black <- egg_ortho_vs_black %>% tidyr::pivot_longer(cols = colnames(egg_ortho_vs_black)[-1], names_to = "transcript") %>% group_by(rowname) %>% arrange(-value)
+
+egg_4918_high_cor <- egg_ortho_vs_black %>% filter(rowname == "MSTRG.4918.1") %>% filter (value > 0.75) %>% filter(grepl("g", transcript))
+
+egg_12327_high_cor <- egg_ortho_vs_black %>% filter(rowname == "MSTRG.12327.1") %>% filter (value > 0.75) %>% filter(grepl("g", transcript))
+
+egg_20439_high_cor <- egg_ortho_vs_black %>% filter(rowname == "MSTRG.20439.1") %>% filter (value > 0.75) %>% filter(grepl("g", transcript))
+
+egg_33641_high_cor <- egg_ortho_vs_black %>% filter(rowname == "MSTRG.33641.1") %>% filter (value > 0.75) %>% filter(grepl("g", transcript))
+
+egg_31543_high_cor <- egg_ortho_vs_black %>% filter(rowname == "MSTRG.31543.1") %>% filter (value > 0.75) %>% filter(grepl("g", transcript))
+
+egg_24717_high_cor <- egg_ortho_vs_black %>% filter(rowname == "MSTRG.24717.1") %>% filter (value > 0.75) %>% filter(grepl("g", transcript))
+
+for (transcript in c("4918", "12327", "20439", "33641", "31543", "24717")){
+  geneList <- factor(as.integer(egg_all_genes %in% get(paste0("egg_", transcript, "_high_cor"))$transcript))
+  names(geneList) <- egg_all_genes
+  for (annot_type in c("BP", "CC", "MF")){
+    GOdata <- new("topGOdata",
+              ontology = annot_type,  # Can be "BP", "MF", or "CC"
+              allGenes = geneList,
+              geneSelectionFun = function(x)(x == 1),
+              annot = annFUN.gene2GO,
+              gene2GO = egg_geneID2GO)
+
+    resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+    goResults <- GenTable(GOdata,
+                      classicFisher = resultFisher,
+                      topNodes = 20)
+
+    print(goResults)
+    
+    write.csv(goResults, file = paste0("data/04_characterization/egg_08neighbors/", transcript, "/", annot_type, ".csv"), row.names = FALSE)
+  }
+}
+
+egg_interest_quant <- egg_quant[c("MSTRG.12327.1","MSTRG.20439.1","MSTRG.33641.1","MSTRG.4918.1","MSTRG.31543.1","MSTRG.24717.1"),] %>% mutate(across(everything(), ~ log2(.x + 1))) %>% mutate(transcript = rownames(.)) %>% pivot_longer(., cols = !transcript, names_to = "sample", values_to = "expression") %>% 
+  mutate(organ = "") %>%
+  mutate(organ = ifelse(grepl("\\bF\\d", sample), "Flower", organ)) %>%
+  mutate(organ = ifelse(grepl("\\bMF\\d", sample), "MidFlower", organ)) %>%
+  mutate(organ = ifelse(grepl("\\bsb\\d", sample), "SmallFlower", organ)) %>%
+  mutate(organ = ifelse(grepl("spine\\d", sample), "Prickle", organ)) %>%
+  mutate(organ = ifelse(grepl("Firstleaf\\d", sample), "FirstLeaf", organ)) %>%
+  mutate(organ = ifelse(grepl("root\\d", sample), "Root", organ)) %>%
+  mutate(organ = ifelse(grepl("stem\\d", sample), "Stem", organ)) %>%
+  mutate(organ = ifelse(grepl("shoot\\d", sample), "Shoot", organ)) %>%
+  mutate(organ = ifelse(grepl("SeedlingRoot\\d", sample), "SeedlingRoot", organ)) %>%
+  mutate(organ = ifelse(grepl("\\bUpSeedling|\\bseedling|\\bup", sample), "SeedlingShoot", organ)) %>%
+  mutate(organ = ifelse(grepl("5cmFruit\\b", sample), "Fruit", organ)) %>%
+  mutate(organ = ifelse(grepl("5cmFruitpeel", sample), "Peel", organ)) %>%
+  mutate(organ = ifelse(grepl("bigFruit", sample), "BigFruit", organ)) %>%
+  group_by(organ, transcript) %>%
+  mutate(avg_expression = mean(expression))
+
+egg_interest_peaks <- egg_interest_quant %>% 
+  group_by(transcript) %>% 
+  slice_max(order_by = avg_expression, n = 1, with_ties = F) %>% 
+  dplyr::rename(peaked_at_organ = organ)
+
+egg_interest_organ_peaks <- egg_interest_quant %>% 
+  group_by(organ) %>% 
+  slice_max(order_by = avg_expression, n = 1, with_ties = F) %>% 
+  dplyr::rename(peaked_at_organ = organ) %>% arrange(avg_expression)
+
+egg_interest_num_peaks <- egg_interest_peaks %>% 
+  group_by(peaked_at_organ) %>% 
+  count() %>% 
+  arrange(-n)
+
+egg_interest_peaks_reordered <- egg_interest_peaks %>% 
+  inner_join(egg_interest_num_peaks, by = "peaked_at_organ") %>%
+  arrange(-n, avg_expression)
+
+egg_interest_quant$organ <- factor(egg_interest_quant$organ, levels = egg_interest_organ_peaks$peaked_at_organ)
+egg_interest_quant$transcript <- factor(egg_interest_quant$transcript, levels = egg_interest_peaks_reordered$transcript)
+
+egg_interest_heatmap <- egg_interest_quant %>%
+  ggplot(aes(x = organ, y = transcript)) +
+  geom_tile(aes(fill = avg_expression)) +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+egg_interest_heatmap
+
+tom_interest_quant <- tom_quant[c("MSTRG.3642.1", "MSTRG.14560.1", "MSTRG.14561.1", "MSTRG.10412.1", "MSTRG.31991.1","MSTRG.5270.1"),] %>% mutate(across(everything(), ~ log2(.x + 1))) %>% mutate(transcript = rownames(.)) %>% pivot_longer(., cols = !transcript, names_to = "sample", values_to = "expression") %>% mutate(organ = "") %>%
+  mutate(organ = ifelse(grepl("Seedling", sample), "Seedling", organ)) %>%
+  mutate(organ = ifelse(grepl("Root", sample), "Root", organ)) %>%
+  mutate(organ = ifelse(grepl("Shoot", sample), "Shoot", organ)) %>%
+  mutate(organ = ifelse(grepl("SAM", sample), "SAM", organ)) %>%
+  mutate(organ = ifelse(grepl("AcroStem", sample), "AcroStem", organ)) %>%
+  mutate(organ = ifelse(grepl("BasiStem", sample), "BasiStem", organ)) %>%
+  mutate(organ = ifelse(grepl("Flower", sample), "Flower", organ)) %>%
+  mutate(organ = ifelse(grepl("Old", sample), "Old", organ)) %>%
+  mutate(organ = ifelse(grepl("Young", sample), "Young", organ)) %>%
+  group_by(organ, transcript) %>%
+  mutate(avg_expression = mean(expression))
+
+tom_interest_peaks <- tom_interest_quant %>% 
+  group_by(transcript) %>% 
+  slice_max(order_by = avg_expression, n = 1, with_ties = F) %>% 
+  dplyr::rename(peaked_at_organ = organ)
+
+tom_interest_organ_peaks <- tom_interest_quant %>% 
+  group_by(organ) %>% 
+  slice_max(order_by = avg_expression, n = 1, with_ties = F) %>% 
+  dplyr::rename(peaked_at_organ = organ) %>% arrange(avg_expression)
+
+tom_interest_num_peaks <- tom_interest_peaks %>% 
+  group_by(peaked_at_organ) %>% 
+  count() %>% 
+  arrange(-n)
+
+tom_interest_peaks_reordered <- tom_interest_peaks %>% 
+  inner_join(tom_interest_num_peaks, by = "peaked_at_organ") %>%
+  arrange(-n, avg_expression)
+
+tom_interest_quant$organ <- factor(tom_interest_quant$organ, levels = tom_interest_organ_peaks$peaked_at_organ)
+tom_interest_quant$transcript <- factor(tom_interest_quant$transcript, levels = tom_interest_peaks_reordered$transcript)
+
+tom_interest_heatmap <- tom_interest_quant %>%
+  ggplot(aes(x = organ, y = transcript)) +
+  geom_tile(aes(fill = avg_expression)) +
+  scale_fill_gradientn(colors = brewer.pal(9, "YlGnBu")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+tom_interest_heatmap
+```
+
+```{bash alignments}
+export PATH=/programs/ncbi-blast-2.16.0+/bin:$PATH
+
+makeblastdb -in data/04_characterization/egg_06fasim/egg_of_interest.fasta -parse_seqids -dbtype nucl -out resources/egg.db -title "Eggplant lncRNAs of Interest Database"
+
+makeblastdb -in data/04_characterization/tom_06fasim/tom_of_interest.fasta -parse_seqids -dbtype nucl -out resources/tom.db -title "Tomato lncRNAs of Interest Database"
+
+blastn -query data/04_characterization/egg_06fasim/egg_of_interest.fasta -db resources/tom.db -out data/04_characterization/egg_06fasim/egg_vs_tom.out
+
+blastn -query data/04_characterization/tom_06fasim/tom_of_interest.fasta -db resources/egg.db -out data/04_characterization/tom_06fasim/tom_vs_egg.out
+```
+
+```{r egg-subnetworks}
+pacman::p_load(WGCNA, tidyverse, CorLevelPlot, gridExtra, dplyr, RColorBrewer, igraph, install = FALSE)
+
+
+inBlack <- as.matrix(TOM)[(egg_bwnet$colors == "black"), (egg_bwnet$colors == "black")]
+
+dimnames(inBlack) <- list(names(egg_bwnet$colors)[(egg_bwnet$colors == "black")], names(egg_bwnet$colors)[(egg_bwnet$colors == "black")])
+
+inBlack <- 1/inBlack
+
+inBlack_leiden <- 1/inBlack
+
+inBlack_leiden_graph <- graph_from_adjacency_matrix(
+  inBlack_leiden,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE,
+  add.colnames = NULL,
+  add.rownames = NA
+)
+
+inBlack_clusters <- cluster_leiden(inBlack_leiden_graph, objective_function = "CPM", weights = NULL, resolution = 0.023)
+print(inBlack_clusters)
+
+inBlack_graph <- graph_from_adjacency_matrix(
+  inBlack,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE,
+  add.colnames = NULL,
+  add.rownames = NA
+)
+
+subgraph_4918 <- induced_subgraph(inBlack_graph, vids = names(sort(distances(inBlack_graph, v = "MSTRG.4918.1", weights = NULL)[1, ]))[1:20])
+subgraph_4918["MSTRG.4918.1"]
+subgraph_4918_filtered <- delete_edges(subgraph_4918, E(subgraph_4918)[weight > max(subgraph_4918["MSTRG.4918.1"])])
+plot(subgraph_4918_filtered, layout = layout_nicely)
+subgraph_4918_mat <- 1/(as.matrix(subgraph_4918_filtered, attr = "weight"))
+subgraph_4918_mat[is.infinite(subgraph_4918_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_4918_mat, edgeFile = "data/04_characterization/egg_08neighbors/4918/4918_edges.txt", nodeFile = "data/04_characterization/egg_08neighbors/4918/4918_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_4918_mat))
+subgraph_4918_GO <- data.frame(name = names(subgraph_4918["MSTRG.4918.1"]), distance = unname(subgraph_4918["MSTRG.4918.1"])) %>% inner_join(etotal, by = c("name" = "#query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_24717 <- induced_subgraph(inBlack_graph, vids = names(sort(distances(inBlack_graph, v = "MSTRG.24717.1", weights = NULL)[1, ]))[1:20])
+subgraph_24717["MSTRG.24717.1"]
+subgraph_24717_filtered <- delete_edges(subgraph_24717, E(subgraph_24717)[weight > max(subgraph_24717["MSTRG.24717.1"])])
+plot(subgraph_24717_filtered, layout = layout_nicely)
+subgraph_24717_mat <- 1/(as.matrix(subgraph_24717_filtered, attr = "weight"))
+subgraph_24717_mat[is.infinite(subgraph_24717_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_24717_mat, edgeFile = "data/04_characterization/egg_08neighbors/24717/24717_edges.txt", nodeFile = "data/04_characterization/egg_08neighbors/24717/24717_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_24717_mat))
+subgraph_24717_GO <- data.frame(name = names(subgraph_24717["MSTRG.24717.1"]), distance = unname(subgraph_24717["MSTRG.24717.1"])) %>% inner_join(etotal, by = c("name" = "#query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_12327 <- induced_subgraph(inBlack_graph, vids = names(sort(distances(inBlack_graph, v = "MSTRG.12327.1", weights = NULL)[1, ]))[1:20])
+subgraph_12327["MSTRG.12327.1"]
+subgraph_12327_filtered <- delete_edges(subgraph_12327, E(subgraph_12327)[weight > max(subgraph_12327["MSTRG.12327.1"])])
+plot(subgraph_12327_filtered, layout = layout_nicely)
+subgraph_12327_mat <- 1/(as.matrix(subgraph_12327_filtered, attr = "weight"))
+subgraph_12327_mat[is.infinite(subgraph_12327_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_12327_mat, edgeFile = "data/04_characterization/egg_08neighbors/12327/12327_edges.txt", nodeFile = "data/04_characterization/egg_08neighbors/12327/12327_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_12327_mat))
+subgraph_12327_GO <- data.frame(name = names(subgraph_12327["MSTRG.12327.1"]), distance = unname(subgraph_12327["MSTRG.12327.1"])) %>% inner_join(etotal, by = c("name" = "#query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_20439 <- induced_subgraph(inBlack_graph, vids = names(sort(distances(inBlack_graph, v = "MSTRG.20439.1", weights = NULL)[1, ]))[1:20])
+subgraph_20439["MSTRG.20439.1"]
+subgraph_20439_filtered <- delete_edges(subgraph_20439, E(subgraph_20439)[weight > max(subgraph_20439["MSTRG.20439.1"])])
+plot(subgraph_20439_filtered, layout = layout_nicely)
+subgraph_20439_mat <- 1/(as.matrix(subgraph_20439_filtered, attr = "weight"))
+subgraph_20439_mat[is.infinite(subgraph_20439_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_20439_mat, edgeFile = "data/04_characterization/egg_08neighbors/20439/20439_edges.txt", nodeFile = "data/04_characterization/egg_08neighbors/20439/20439_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_20439_mat))
+subgraph_20439_GO <- data.frame(name = names(subgraph_20439["MSTRG.20439.1"]), distance = unname(subgraph_20439["MSTRG.20439.1"])) %>% inner_join(etotal, by = c("name" = "#query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+
+subgraph_33641 <- induced_subgraph(inBlack_graph, vids = names(sort(distances(inBlack_graph, v = "MSTRG.33641.1", weights = NULL)[1, ]))[1:20])
+subgraph_33641["MSTRG.33641.1"]
+subgraph_33641_filtered <- delete_edges(subgraph_33641, E(subgraph_33641)[weight > max(subgraph_33641["MSTRG.33641.1"])])
+plot(subgraph_33641_filtered, layout = layout_nicely)
+subgraph_33641_mat <- 1/(as.matrix(subgraph_33641_filtered, attr = "weight"))
+subgraph_33641_mat[is.infinite(subgraph_33641_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_33641_mat, edgeFile = "data/04_characterization/egg_08neighbors/33641/33641_edges.txt", nodeFile = "data/04_characterization/egg_08neighbors/33641/33641_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_33641_mat))
+subgraph_33641_GO <- data.frame(name = names(subgraph_33641["MSTRG.33641.1"]), distance = unname(subgraph_33641["MSTRG.33641.1"])) %>% inner_join(etotal, by = c("name" = "#query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_31543 <- induced_subgraph(inBlack_graph, vids = names(sort(distances(inBlack_graph, v = "MSTRG.31543.1", weights = NULL)[1, ]))[1:20])
+subgraph_31543["MSTRG.31543.1"]
+subgraph_31543_filtered <- delete_edges(subgraph_31543, E(subgraph_31543)[weight > max(subgraph_31543["MSTRG.31543.1"])])
+plot(subgraph_31543_filtered, layout = layout_nicely)
+subgraph_31543_mat <- 1/(as.matrix(subgraph_31543_filtered, attr = "weight"))
+subgraph_31543_mat[is.infinite(subgraph_31543_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_31543_mat, edgeFile = "data/04_characterization/egg_08neighbors/31543/31543_edges.txt", nodeFile = "data/04_characterization/egg_08neighbors/31543/31543_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_31543_mat))
+subgraph_31543_GO <- data.frame(name = names(subgraph_31543["MSTRG.31543.1"]), distance = unname(subgraph_31543["MSTRG.31543.1"])) %>% inner_join(etotal, by = c("name" = "#query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+```
+
+```{r tom-subnetworks}
+pacman::p_load(WGCNA, tidyverse, CorLevelPlot, gridExtra, dplyr, RColorBrewer, igraph, install = FALSE)
+
+inTurqoise <- as.matrix(TOM)[(tom_bwnet$colors == "turquoise"), (tom_bwnet$colors == "turquoise")]
+dimnames(inTurqoise) <- list(names(tom_bwnet$colors)[(tom_bwnet$colors == "turquoise")], names(tom_bwnet$colors)[(tom_bwnet$colors == "turquoise")])
+inTurqoise <- 1/inTurqoise
+turq_graph <- graph_from_adjacency_matrix(
+  inTurqoise,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE,
+  add.colnames = NULL,
+  add.rownames = NA
+)
+
+inBlue <- as.matrix(TOM)[(tom_bwnet$colors == "blue"), (tom_bwnet$colors == "blue")]
+dimnames(inBlue) <- list(names(tom_bwnet$colors)[(tom_bwnet$colors == "blue")], names(tom_bwnet$colors)[(tom_bwnet$colors == "blue")])
+inBlue <- 1/inBlue
+blue_graph <- graph_from_adjacency_matrix(
+  inBlue,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE,
+  add.colnames = NULL,
+  add.rownames = NA
+)
+
+inGreen <- as.matrix(TOM)[(tom_bwnet$colors == "green"), (tom_bwnet$colors == "green")]
+dimnames(inGreen) <- list(names(tom_bwnet$colors)[(tom_bwnet$colors == "green")], names(tom_bwnet$colors)[(tom_bwnet$colors == "green")])
+inGreen <- 1/inGreen
+green_graph <- graph_from_adjacency_matrix(
+  inGreen,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE,
+  add.colnames = NULL,
+  add.rownames = NA
+)
+
+inGrey <- as.matrix(TOM)[(tom_bwnet$colors == "grey"), (tom_bwnet$colors == "grey")]
+dimnames(inGrey) <- list(names(tom_bwnet$colors)[(tom_bwnet$colors == "grey")], names(tom_bwnet$colors)[(tom_bwnet$colors == "grey")])
+inGrey <- 1/inGrey
+grey_graph <- graph_from_adjacency_matrix(
+  inGrey,
+  mode = "undirected",
+  weighted = TRUE,
+  diag = FALSE,
+  add.colnames = NULL,
+  add.rownames = NA
+)
+
+subgraph_3642 <- induced_subgraph(turq_graph, vids = names(sort(distances(turq_graph, v = "MSTRG.3642.1", weights = NULL)[1, ]))[1:20])
+subgraph_3642["MSTRG.3642.1"]
+subgraph_3642_filtered <- delete_edges(subgraph_3642, E(subgraph_3642)[weight > max(subgraph_3642["MSTRG.3642.1"])])
+plot(subgraph_3642_filtered, layout = layout_nicely)
+subgraph_3642_mat <- 1/(as.matrix(subgraph_3642_filtered, attr = "weight"))
+subgraph_3642_mat[is.infinite(subgraph_3642_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_3642_mat, edgeFile = "data/04_characterization/tom_08neighbors/3642/3642_edges.txt", nodeFile = "data/04_characterization/tom_08neighbors/3642/3642_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_3642_mat))
+subgraph_3642_GO <- data.frame(name = names(subgraph_3642["MSTRG.3642.1"]), distance = unname(subgraph_3642["MSTRG.3642.1"])) %>% inner_join(ttotal, by = c("name" = "query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_14561 <- induced_subgraph(blue_graph, vids = names(sort(distances(blue_graph, v = "MSTRG.14561.1", weights = NULL)[1, ]))[1:20])
+subgraph_14561["MSTRG.14561.1"]
+subgraph_14561_filtered <- delete_edges(subgraph_14561, E(subgraph_14561)[weight > max(subgraph_14561["MSTRG.14561.1"])])
+plot(subgraph_14561_filtered, layout = layout_nicely)
+subgraph_14561_mat <- 1/(as.matrix(subgraph_14561_filtered, attr = "weight"))
+subgraph_14561_mat[is.infinite(subgraph_14561_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_14561_mat, edgeFile = "data/04_characterization/tom_08neighbors/14561/14561_edges.txt", nodeFile = "data/04_characterization/tom_08neighbors/14561/14561_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_14561_mat))
+subgraph_14561_GO <- data.frame(name = names(subgraph_14561["MSTRG.14561.1"]), distance = unname(subgraph_14561["MSTRG.14561.1"])) %>% inner_join(ttotal, by = c("name" = "query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_5270 <- induced_subgraph(green_graph, vids = names(sort(distances(green_graph, v = "MSTRG.5270.1", weights = NULL)[1, ]))[1:20])
+subgraph_5270["MSTRG.5270.1"]
+subgraph_5270_filtered <- delete_edges(subgraph_5270, E(subgraph_5270)[weight > max(subgraph_5270["MSTRG.5270.1"])])
+plot(subgraph_5270_filtered, layout = layout_nicely)
+subgraph_5270_mat <- 1/(as.matrix(subgraph_5270_filtered, attr = "weight"))
+subgraph_5270_mat[is.infinite(subgraph_5270_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_5270_mat, edgeFile = "data/04_characterization/tom_08neighbors/5270/5270_edges.txt", nodeFile = "data/04_characterization/tom_08neighbors/5270/5270_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_5270_mat))
+subgraph_5270_GO <- data.frame(name = names(subgraph_5270["MSTRG.5270.1"]), distance = unname(subgraph_5270["MSTRG.5270.1"])) %>% inner_join(ttotal, by = c("name" = "query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_10412 <- induced_subgraph(green_graph, vids = names(sort(distances(green_graph, v = "MSTRG.10412.1", weights = NULL)[1, ]))[1:20])
+subgraph_10412["MSTRG.10412.1"]
+subgraph_10412_filtered <- delete_edges(subgraph_10412, E(subgraph_10412)[weight > max(subgraph_10412["MSTRG.10412.1"])])
+plot(subgraph_10412_filtered, layout = layout_nicely)
+subgraph_10412_mat <- 1/(as.matrix(subgraph_10412_filtered, attr = "weight"))
+subgraph_10412_mat[is.infinite(subgraph_10412_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_10412_mat, edgeFile = "data/04_characterization/tom_08neighbors/10412/10412_edges.txt", nodeFile = "data/04_characterization/tom_08neighbors/10412/10412_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_10412_mat))
+subgraph_10412_GO <- data.frame(name = names(subgraph_10412["MSTRG.10412.1"]), distance = unname(subgraph_10412["MSTRG.10412.1"])) %>% inner_join(ttotal, by = c("name" = "query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_31991 <- induced_subgraph(grey_graph, vids = names(sort(distances(grey_graph, v = "MSTRG.31991.1", weights = NULL)[1, ]))[1:20])
+subgraph_31991["MSTRG.31991.1"]
+subgraph_31991_filtered <- delete_edges(subgraph_31991, E(subgraph_31991)[weight > max(subgraph_31991["MSTRG.31991.1"])])
+plot(subgraph_31991_filtered, layout = layout_nicely)
+subgraph_31991_mat <- 1/(as.matrix(subgraph_31991_filtered, attr = "weight"))
+subgraph_31991_mat[is.infinite(subgraph_31991_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_31991_mat, edgeFile = "data/04_characterization/tom_08neighbors/31991/31991_edges.txt", nodeFile = "data/04_characterization/tom_08neighbors/31991/31991_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_31991_mat))
+subgraph_31991_GO <- data.frame(name = names(subgraph_31991["MSTRG.31991.1"]), distance = unname(subgraph_31991["MSTRG.31991.1"])) %>% inner_join(ttotal, by = c("name" = "query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
+
+subgraph_14560 <- induced_subgraph(grey_graph, vids = names(sort(distances(grey_graph, v = "MSTRG.14560.1", weights = NULL)[1, ]))[1:20])
+subgraph_14560["MSTRG.14560.1"]
+subgraph_14560_filtered <- delete_edges(subgraph_14560, E(subgraph_14560)[weight > max(subgraph_14560["MSTRG.14560.1"])])
+plot(subgraph_14560_filtered, layout = layout_nicely)
+subgraph_14560_mat <- 1/(as.matrix(subgraph_14560_filtered, attr = "weight"))
+subgraph_14560_mat[is.infinite(subgraph_14560_mat)] <- 0
+exportNetworkToCytoscape(adjMat = subgraph_14560_mat, edgeFile = "data/04_characterization/tom_08neighbors/14560/14560_edges.txt", nodeFile = "data/04_characterization/tom_08neighbors/14560/14560_nodes.txt", threshold = 0, nodeNames = rownames(subgraph_14560_mat))
+subgraph_14560_GO <- data.frame(name = names(subgraph_14560["MSTRG.14560.1"]), distance = unname(subgraph_14560["MSTRG.14560.1"])) %>% inner_join(ttotal, by = c("name" = "query")) %>% select(c("name","distance", "score", "Description", "PFAMs", "Preferred_name")) %>% arrange(distance)
 ```
 
