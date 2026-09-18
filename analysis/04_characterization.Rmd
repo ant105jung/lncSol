@@ -1122,20 +1122,28 @@ unzip resources/Fasim-LongTarget-main.zip -d resources
 cd resources/Fasim-LongTarget-main/
 
 g++ Fasim-LongTarget.cpp ssw_cpp.cpp sswNew.cpp -O -msse2 -o fasim
-
 cd ../../..
 
-resources/fasim -f1 resources/galaxy_bari06.fa -f2 data/04_characterization/egg_06fasim/egg_of_interest.fasta -O data/04_characterization/egg_06fasim/output
+cp resources/galaxy_bari06.fa /workdir/aj564
+/programs/seqkit-2.13.0/seqkit split --by-id /workdir/aj564/galaxy_bari06.fa
 
-/programs/seqkit-2.13.0/seqkit split --by-id galaxy_bari06.fa
+cp data/04_characterization/egg_06fasim/egg_of_interest.fasta /workdir/aj564
+/programs/seqkit-2.13.0/seqkit split --by-id /workdir/aj564/egg_of_interest.fasta
+
+cp resources/Fasim-LongTarget-main/fasim /workdir/aj564/
+
+mv /workdir/aj564/egg_of_interest.fasta.split/* /workdir/aj564/
+mv /workdir/aj564/galaxy_bari06.fa.split/* /workdir/aj564/
 
 egg_fasim () {
   base=$(basename "$1" .fa)
-  /workdir/aj564/fasim -f1 $1 -f2 egg_of_interest.fasta
+  /workdir/aj564/fasim -f1 $1 -f2 $2
 }
 export -f egg_fasim
 
-parallel egg_fasim ::: galaxy_bari06.part_ch*
+cd /workdir/aj564/
+
+parallel egg_fasim ::: galaxy_bari06.part_ch07.fa ::: egg_of_interest.part_MSTRG.20439.1.fasta
 
 for file in *TFO*; do [ -f "$file" ] && mv -v -- "$file" "${file:1}"; done
 ```
